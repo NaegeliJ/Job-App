@@ -498,8 +498,8 @@ int main() {
 
             if (body.contains("fit_label")) {
                 std::string fit_label = body["fit_label"];
-                if (fit_label != "no go")
-                    throw std::runtime_error("Only 'no go' supported for fit_label bulk delete");
+                if (fit_label.empty())
+                    throw std::runtime_error("Missing fit_label value");
                 std::lock_guard<std::mutex> lock(db_write_mutex);
                 deleted = bulk_soft_delete_by_fit_label(db, fit_label);
             } else {
@@ -508,10 +508,6 @@ int main() {
 
                 if (status.empty())
                     throw std::runtime_error("Missing 'status' or 'fit_label' field");
-                if (status == "interested" || status == "applied")
-                    throw std::runtime_error("Cannot bulk delete '" + status + "' jobs");
-                if (status != "skipped" && status != "unseen")
-                    throw std::runtime_error("Invalid status for bulk delete: " + status);
 
                 std::lock_guard<std::mutex> lock(db_write_mutex);
                 deleted = bulk_soft_delete_by_status(db, status, older_than_days);
@@ -540,6 +536,20 @@ int main() {
             std::lock_guard<std::mutex> lock(db_write_mutex);
             update_job_field(db, req.path_params.at("id"), "user_status", "deleted");
             res.set_content(json{{"ok", true}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/jobs/restore-all", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+        try {
+            int restored;
+            {
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                restored = restore_all_deleted(db);
+            }
+            res.set_content(json{{"ok", true}, {"restored", restored}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
@@ -1353,6 +1363,25 @@ then trigger a profile refresh to update the narrative.*
     });
 
     // ── ADMIN CONSOLE ENDPOINTS ────────────────────────────────────────────────
+
+    server.Delete("/api/admin/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            std::string fit_label = body.value("fit_label", "");
+            if (fit_label.empty())
+                throw std::runtime_error("Missing 'fit_label' field");
+            int deleted;
+            {
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_hard_delete_by_fit_label(db, fit_label);
+            }
+            std::cout << "[ADMIN] Hard-deleted " << deleted << " jobs with fit_label=" << fit_label << std::endl;
+            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+        }
+    });
 
     server.Delete("/api/admin/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");

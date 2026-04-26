@@ -111,6 +111,16 @@ int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
     return sqlite3_changes(db);
 }
 
+int bulk_hard_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
+    exec_write(db, "DELETE FROM jobs WHERE LOWER(fit_label) = LOWER(?)", {fit_label});
+    return sqlite3_changes(db);
+}
+
+int restore_all_deleted(sqlite3* db) {
+    exec_write(db, "UPDATE jobs SET user_status = 'unseen' WHERE user_status = 'deleted'", {});
+    return sqlite3_changes(db);
+}
+
 int bulk_soft_delete_by_status(sqlite3* db, const std::string& status, int older_than_days) {
     if (older_than_days > 0) {
         const std::string sql = "UPDATE jobs SET user_status = 'deleted' WHERE user_status = ? AND scraped_at < date('now', '-' || ? || ' days')";

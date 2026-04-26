@@ -53,6 +53,8 @@ void delete_job(sqlite3* db, const std::string& job_id);
 void delete_expired_jobs(sqlite3* db);
 int bulk_soft_delete_by_status(sqlite3* db, const std::string& status, int older_than_days = 0);
 int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label);
+int bulk_hard_delete_by_fit_label(sqlite3* db, const std::string& fit_label);
+int restore_all_deleted(sqlite3* db);
 
 // Job queries
 std::vector<JobRecord> get_all_jobs(sqlite3* db);
