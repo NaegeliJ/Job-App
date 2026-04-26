@@ -1,4 +1,5 @@
 import state from '../state.js';
+import { bulkDeleteByStatus } from './actions.js';
 
 const API_BASE = '/api';
 
@@ -26,7 +27,8 @@ Available commands:
   clear                   Clear console output
   stats                   Show job statistics
 
-  delete:job <id>         Delete a job completely
+  delete:status <status>  Soft-delete all skipped or unseen jobs
+  delete:job <id>         Hard-delete a job completely
   fitcheck:clear <id>     Clear fit data for one job
   fitcheck:clear-all      Clear fit data for ALL jobs
   fitcheck:recheck <id>   Re-check fit for one job
@@ -77,8 +79,22 @@ Available commands:
     }
   },
 
+  'delete:status': {
+    desc: 'Soft-delete all jobs with given status (skipped or unseen)',
+    usage: 'delete:status <skipped|unseen>',
+    confirm: true,
+    handler: async (args) => {
+      const status = args[0];
+      if (!status) throw new Error('Usage: delete:status <skipped|unseen>');
+      if (!['skipped', 'unseen'].includes(status))
+        throw new Error('Only skipped or unseen allowed');
+      const deleted = await bulkDeleteByStatus(status, 0);
+      return `Soft-deleted ${deleted} ${status} jobs`;
+    }
+  },
+
   'delete:job': {
-    desc: 'Delete a job completely',
+    desc: 'Delete a job completely (hard delete)',
     usage: 'delete:job <id>',
     confirm: true,
     handler: async (args) => {

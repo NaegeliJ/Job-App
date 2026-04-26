@@ -1,6 +1,6 @@
 import state from './state.js';
 import { GET_URL, PROFILE_GET_URL } from './api.js';
-import { setConnectionStatus, updateStats, onSearch, clearSearch, setFilter, toggleSort } from './components/header.js';
+import { setConnectionStatus, updateStats, onSearch, clearSearch, setFilter, toggleSort, initBulkDeleteDropdown } from './components/header.js';
 import { renderList, selectJob } from './components/job-list.js';
 import { closeSettings, openSettings, saveSettings } from './components/modal.js';
 import { setStatus, setRating, hoverStar, unhoverStar, setExpired, saveNotes, scrapeJobs, triggerFitCheck, openProfile, closeProfile, saveProfile, openOnboarding, importJobFromText, saveImportUrl, openImportModal, closeImportModal } from './components/actions.js';
@@ -84,6 +84,9 @@ function bindEvents() {
 
   // Sort button
   onClick('sort-btn', toggleSort);
+
+  // Bulk delete dropdown
+  initBulkDeleteDropdown();
 
   // Job list - event delegation
   const jobList = document.getElementById('job-list');

@@ -72,7 +72,7 @@ function countWeakJobs(jobs) {
 }
 
 export function updateStats() {
-  const jobs = state.allJobs;
+  const jobs = state.allJobs.filter(j => j.user_status !== 'deleted');
   const total = jobs.length;
   
   // Fit verdict counts
@@ -135,15 +135,107 @@ export function setFilter(button, filterName) {
 export function toggleSort() {
   const sortButton = document.getElementById('sort-btn');
   if (!sortButton) return;
-  
+
   // Toggle sort mode
   state.sortMode = state.sortMode === 'score' ? 'date' : 'score';
-  
+
   // Update button appearance
   const isDateSort = state.sortMode === 'date';
   sortButton.textContent = isDateSort ? '⇅ DATE' : '⇅ SCORE';
   sortButton.style.color = isDateSort ? 'var(--accent)' : 'var(--text3)';
   sortButton.style.borderColor = isDateSort ? 'rgba(96,165,250,0.4)' : 'var(--border2)';
-  
+
   renderList();
+}
+
+// ============================================================================
+// Bulk Delete Dropdown
+// ============================================================================
+
+function isOlderThan30Days(scrapedAt) {
+  if (!scrapedAt) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  return new Date(scrapedAt) < cutoff;
+}
+
+async function bulkDeleteRequest(body) {
+  const res = await fetch('/api/jobs/bulk', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Bulk delete failed');
+  }
+  const data = await res.json();
+  state.allJobs = await fetch('/api/jobs').then(r => r.json());
+  renderList();
+  updateStats();
+  return data.deleted;
+}
+
+function toastBulk(message, isError = false) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.style.borderColor = isError ? 'rgba(248,113,113,0.35)' : 'rgba(96,165,250,0.3)';
+  toast.style.color = isError ? 'var(--red)' : 'var(--accent)';
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+export function updateBulkDeleteMenu() {
+  const menu = document.getElementById('bulk-delete-menu');
+  if (!menu) return;
+
+  const active = state.allJobs.filter(j => j.user_status !== 'deleted');
+  const skippedCount = active.filter(j => j.user_status === 'skipped').length;
+  const noGoCount = active.filter(j => (j.fit_label || '').toLowerCase() === 'no go').length;
+  const oldUnseenCount = active.filter(j => (!j.user_status || j.user_status === 'unseen') && isOlderThan30Days(j.scraped_at)).length;
+
+  const items = [];
+  if (skippedCount > 0)
+    items.push(`<button class="bulk-del-item" data-action="status" data-status="skipped" data-days="0">Delete all skipped (${skippedCount})</button>`);
+  if (noGoCount > 0)
+    items.push(`<button class="bulk-del-item" data-action="fitlabel" data-label="no go">Delete all No Go (${noGoCount})</button>`);
+  if (oldUnseenCount > 0)
+    items.push(`<button class="bulk-del-item" data-action="status" data-status="unseen" data-days="30">Delete unseen &gt;30d (${oldUnseenCount})</button>`);
+
+  menu.innerHTML = items.length
+    ? items.join('')
+    : '<span class="bulk-del-empty">Nothing to clean up</span>';
+
+  menu.querySelectorAll('.bulk-del-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const label = btn.textContent;
+      if (!confirm(`${label}?\n\nThese jobs will be hidden and won't be re-enriched on next scrape.`)) return;
+      menu.classList.remove('open');
+      try {
+        const body = btn.dataset.action === 'fitlabel'
+          ? { fit_label: btn.dataset.label }
+          : { status: btn.dataset.status, older_than_days: parseInt(btn.dataset.days, 10) };
+        const deleted = await bulkDeleteRequest(body);
+        toastBulk(`Deleted ${deleted} jobs`);
+        updateBulkDeleteMenu();
+      } catch (e) {
+        toastBulk(e.message, true);
+      }
+    });
+  });
+}
+
+export function initBulkDeleteDropdown() {
+  const btn = document.getElementById('bulk-delete-btn');
+  const menu = document.getElementById('bulk-delete-menu');
+  if (!btn || !menu) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = menu.classList.toggle('open');
+    if (isOpen) updateBulkDeleteMenu();
+  });
+
+  document.addEventListener('click', () => menu.classList.remove('open'));
 }

@@ -119,31 +119,57 @@ export async function setRating(stars) {
 
 export async function setExpired() {
   if (!state.currentJob) return;
-  
+
   const jobTitle = state.currentJob.title;
-  if (!confirm(`Delete "${jobTitle}" permanently?`)) return;
-  
+  if (!confirm(`Delete "${jobTitle}"? It won't reappear on next scrape.`)) return;
+
   try {
-    await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}`, {
-      method: 'DELETE'
+    await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}/soft-delete`, {
+      method: 'POST'
     });
-    
+
     state.allJobs = state.allJobs.filter(j => j.job_id !== state.currentJob.job_id);
     state.currentJob = null;
-    
+
     document.getElementById('action-bar').style.display = 'none';
     document.getElementById('detail-scroll').innerHTML = `
       <div class="empty">
         <div class="empty-i">⌖</div>
         <div class="empty-t">Select a position</div>
       </div>`;
-    
+
     renderList();
     updateStats();
     showToast('Job deleted');
   } catch (error) {
     showToast('Delete failed', true);
   }
+}
+
+async function bulkDelete(body) {
+  const res = await fetch('/api/jobs/bulk', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Bulk delete failed');
+  }
+  const data = await res.json();
+  state.allJobs = await fetch('/api/jobs').then(r => r.json());
+  renderList();
+  updateStats();
+  return data.deleted;
+}
+
+export async function bulkDeleteByStatus(status, olderThanDays = 0) {
+  const body = olderThanDays > 0 ? { status, older_than_days: olderThanDays } : { status };
+  return bulkDelete(body);
+}
+
+export async function bulkDeleteByFitLabel(fitLabel) {
+  return bulkDelete({ fit_label: fitLabel });
 }
 
 export async function saveNotes() {

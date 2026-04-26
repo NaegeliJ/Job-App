@@ -459,7 +459,7 @@ int main() {
             std::lock_guard<std::mutex> lock(db_write_mutex);
             if (body.contains("user_status")) {
                 std::string status = body["user_status"];
-                if (status != "unseen" && status != "interested" && status != "applied" && status != "skipped")
+                if (status != "unseen" && status != "interested" && status != "applied" && status != "skipped" && status != "deleted")
                     throw std::runtime_error("Invalid user_status: " + status);
                 update_job_field(db, job_id, "user_status", status);
             }
@@ -491,10 +491,54 @@ int main() {
         }
     });
 
+    server.Delete("/api/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            int deleted = 0;
+
+            if (body.contains("fit_label")) {
+                std::string fit_label = body["fit_label"];
+                if (fit_label != "no go")
+                    throw std::runtime_error("Only 'no go' supported for fit_label bulk delete");
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_soft_delete_by_fit_label(db, fit_label);
+            } else {
+                std::string status = body.value("status", "");
+                int older_than_days = body.value("older_than_days", 0);
+
+                if (status.empty())
+                    throw std::runtime_error("Missing 'status' or 'fit_label' field");
+                if (status == "interested" || status == "applied")
+                    throw std::runtime_error("Cannot bulk delete '" + status + "' jobs");
+                if (status != "skipped" && status != "unseen")
+                    throw std::runtime_error("Invalid status for bulk delete: " + status);
+
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_soft_delete_by_status(db, status, older_than_days);
+            }
+
+            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(json{{"error", "bad request"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
     server.Delete("/api/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             std::lock_guard<std::mutex> lock(db_write_mutex);
             delete_job(db, req.path_params.at("id"));
+            res.set_content(json{{"ok", true}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/jobs/:id/soft-delete", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::lock_guard<std::mutex> lock(db_write_mutex);
+            update_job_field(db, req.path_params.at("id"), "user_status", "deleted");
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
