@@ -22,7 +22,7 @@ Quickstart focuses on Docker only for now. On a linux machine with Docker instal
 curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | bash
 ```
 
-Open **http://localhost:8080** and complete onboarding. The first screen lets you pick your AI provider, enter the endpoint and model, and paste your API key — no file editing required. Scraping and fit-checking happen inside the app after that.
+Open **http://localhost:8080** and complete onboarding. The first screen lets you pick your AI provider, enter the endpoint and model, and paste your API key — no file editing required. The CV step accepts a PDF drop (extracted in-browser) or plain paste. Scraping and fit-checking happen inside the app after that.
 
 **WSL users:** Docker does not auto-start on WSL boot. Start manually via `docker start job-app`, or add to autostart `~/.bashrc` if you want it automatic:
 
@@ -169,6 +169,7 @@ docker compose logs -f
 | LLM returns empty response or times out | The backend retries once automatically. If it still fails, check that the model name is correct and the endpoint returns JSON/SSE correctly. Backend timeout is fixed at 600s. |
 | Scrape returns 0 jobs | Verify `scrape.queries` in `config_v2.json`. Check logs for HTTP errors from jobs.ch. |
 | Onboarding or profile not saving | Profile is written to `config/user_profile.md`. Check that the `config/` volume mount is working and the container can write there. |
+| PDF drop shows no text | PDF.js extracts text from selectable PDFs only — scanned/image PDFs yield nothing. Paste CV text manually instead. |
 | Fit-check is slow | Increase `fitcheck.limit` if your endpoint handles concurrency well. Decrease if you hit rate limits. Check `max_tokens` — too high wastes time on long reasoning. |
 
 ## Uninstall
