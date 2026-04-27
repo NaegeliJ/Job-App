@@ -30,6 +30,7 @@ Build, test, and code-style guidance for agentic coding in the Job-App repositor
 - **Header Layout**: Logo, status dot, `.search-group` (absolutely centered), profile, settings (left → right). Profile has `margin-left: auto`. Header gap is 8px. No filter buttons in header.
 - **Filter Dropdown**: Lives in `.sb-header` between "Positions" label and `⇅ SCORE` sort button. `#filter-dropdown-btn` triggers `#filter-dropdown-menu` (`.open` class toggle). Open/close wired in `main.js` `bindEvents` (click trigger + document click-outside + Escape key).
 - **No inline onclick handlers:** All event wiring is in `main.js` `bindEvents()`. Elements have `id` attributes; handlers attach via `addEventListener`.
+- **Onboarding CV Drop (Q1):** Drop zone + browse button above the textarea. PDF.js 3.11.174 (CDN) extracts text client-side and fills the textarea. No new backend endpoint — `answers[0]` is still plain text when submitted. `#cv-drop-zone` shown only for `index === 0` via `showQuestion()`.
 
 ### Admin Console
 
@@ -88,7 +89,7 @@ sudo apt update && sudo apt install -y cmake g++ make libsqlite3-dev libcurl4-op
 | `GET/POST /api/config/ai` | — | Read / write AI provider config (provider, endpoint, model, api_key) |
 | `GET /api/profile` | — | Read user_profile.md |
 | `POST /api/profile/save` | — | Write user_profile.md |
-| `POST /api/onboarding/complete` | — | Generate profile from 9 onboarding answers |
+| `POST /api/onboarding/complete` | — | Generate profile from 9 onboarding answers (`answers[0]` = CV text, may be PDF-extracted client-side) |
 
 ### Config Shape (`config_v2.json`)
 ```json
@@ -149,4 +150,4 @@ AI provider/key are read from `config_v2.json` (`fitcheck.provider`, `fitcheck.e
 
 ---
 
-*Last updated: 2026-04-25 (AI provider settings UI; ollama_local key-gate bypass; provider-aware request building; /api/config/ai endpoints)*
+*Last updated: 2026-04-27 (AI provider settings UI; ollama_local key-gate bypass; provider-aware request building; /api/config/ai endpoints; PDF drop zone on onboarding CV step)*

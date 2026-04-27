@@ -210,7 +210,7 @@ export function updateBulkDeleteMenu() {
   menu.querySelectorAll('.bulk-del-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const label = btn.textContent;
-      if (!confirm(`${label}?\n\nThese jobs will be hidden and won't be re-enriched on next scrape.`)) return;
+        if (!confirm(`${label}?\n\nThis cannot be undone.`)) return;
       menu.classList.remove('open');
       try {
         const body = btn.dataset.action === 'fitlabel'

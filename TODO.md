@@ -1,5 +1,8 @@
 # TODO
 
+## UX improvements
+- Fit-check progress bar — show X/total jobs checked during batch run (needs backend to stream progress or expose a `/api/fitcheck/status` polling endpoint)
+
 ## Additional deployment methods
 - Native Linux install script (no Docker) — single `install.sh` that handles deps + builds
 - Windows native build (MSVC or MSYS2)
