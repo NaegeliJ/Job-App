@@ -154,6 +154,13 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
         if (!response.empty())
             std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
     }
+    if (response.empty() || hasTopLevelError(response)) {
+        std::string err_msg = "HTTP " + std::to_string(http_status) + " from " + url;
+        if (!response.empty()) {
+            err_msg += ": " + response.substr(0, 500);
+        }
+        throw std::runtime_error(err_msg);
+    }
     return response;
 }
 
@@ -950,7 +957,7 @@ then trigger a profile refresh to update the narrative.*
             std::string accumulatedResponse = parseStreamingResponse(response);
 
             if (accumulatedResponse.empty()) {
-                throw std::runtime_error("Empty response from API");
+                throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
             }
             
             std::string markdownContent = extractBlock(accumulatedResponse, "markdown");
@@ -1065,7 +1072,7 @@ then trigger a profile refresh to update the narrative.*
                 std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
 
                 std::string accumulated = parseStreamingResponse(response);
-                if (accumulated.empty()) throw std::runtime_error("Empty response from API");
+                if (accumulated.empty()) throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
                 json fit_data = extractJsonFromResponse(accumulated);
                 {
                     std::lock_guard<std::mutex> lock(db_write_mutex);
@@ -1150,7 +1157,7 @@ then trigger a profile refresh to update the narrative.*
             std::cout << "[DEBUG] Accumulated response length: " << accumulatedResponse.length() << std::endl;
             if (accumulatedResponse.empty()) {
                 res.status = 500;
-                res.set_content(json{{"error", "Empty response from AI"}}.dump(), "application/json");
+                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
                 return;
             }
             
@@ -1476,7 +1483,7 @@ then trigger a profile refresh to update the narrative.*
 
             if (accumulated.empty()) {
                 res.status = 500;
-                res.set_content(json{{"error", "Empty response from AI"}}.dump(), "application/json");
+                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
                 return;
             }
 
