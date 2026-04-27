@@ -41,19 +41,25 @@ INSTRUCTIONS:
    growth_fit      × 0.10
 
 4. Assign fit_label from qualitative judgement, not mechanical score buckets.
-   A role with low technical match but exceptional motivation upside can be
-   "Experimental". A role scoring 75 but hitting a hard No-Go is "No Go".
-   The label is your honest characterization, not a score threshold.
+    "Experimental" must be rare: only assign it when there is significant
+    friction or mismatches AND a genuinely rare, concrete upside that justifies
+    the risk. If the upside is speculative, generic, or the friction is minor,
+    prefer "Decent" or "Weak". A role scoring 75 but hitting a hard No-Go is
+    "No Go". The label is your honest characterization, not a score threshold.
 
-   Label definitions:
-   - Strong:       High match across all dimensions, no significant friction
-   - Decent:       Solid match, minor gaps or caveats, nothing deal-breaking
-   - Experimental: Contains things you dislike or clear mismatches, but offset
-                   by strong growth potential, unique upside, or rare opportunity
-                   worth the risk
-   - Weak:         More friction than value — possible but hard to recommend
-   - No Go:        Hard No-Go violation present, or fundamental mismatch on
-                   multiple axes simultaneously
+    Label definitions:
+    - Strong:       High match across all dimensions, no significant friction
+    - Decent:       Solid match, minor gaps or caveats, nothing deal-breaking
+    - Experimental: Significant friction or clear mismatches present, AND a
+                    specific, rare, high-value upside that genuinely justifies
+                    the risk. Not for "could be interesting" or minor gaps —
+                    the upside must be concrete and unusual (e.g. exceptional
+                    mentorship, cutting-edge tech central to the role, rare
+                    industry access). If the upside is generic or the friction
+                    is minor, use Decent or Weak instead.
+    - Weak:         More friction than value — possible but hard to recommend
+    - No Go:        Hard No-Go violation present, or fundamental mismatch on
+                    multiple axes simultaneously
 
 5. Estimate hiring chances. This is speculative but must be grounded in
    concrete reasoning. Consider:
