@@ -1,7 +1,3 @@
-//
-// Created by shops on 12/03/2026.
-//
-
 #include <stdexcept>
 #include <iostream>
 #include "../include/db.h"
@@ -20,7 +16,7 @@ namespace {
             sqlite3_bind_text(stmt, i + 1, params[i].c_str(), -1, SQLITE_TRANSIENT);
         }
 
-        if (sqlite3_step(stmt) != SQLITE_DONE ){
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
             sqlite3_finalize(stmt);  // clean up before throwing
             throw std::runtime_error("exec_write failed: " + std::string(sqlite3_errmsg(db)));
         }
@@ -139,10 +135,8 @@ void delete_expired_jobs(sqlite3* db) {
 }
 
 void db_init(sqlite3 *db) {
-    // Enable parallel read and write
     sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
 
-    // Create db if it doesnt exist
     char* errMsg = nullptr;
     int rc = sqlite3_exec(db, R"(
         CREATE TABLE IF NOT EXISTS jobs (

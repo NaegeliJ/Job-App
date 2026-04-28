@@ -150,13 +150,6 @@ std::string httpGet(const std::string& url) {
     });
 }
 
-std::string httpPost(const std::string& url, const std::string& apiKey, const std::string& body) {
-    return httpRequest(url, "POST", {
-        "Content-Type: application/json",
-        "Authorization: Bearer " + apiKey
-    }, body);
-}
-
 // AI inference calls need a longer timeout — model inference can take several minutes.
 // Retries once on empty response (handles cold-start drops from cloud providers).
 std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body) {
@@ -174,18 +167,10 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
     };
     long http_status = 0;
     std::string response = httpRequest(url, "POST", headers, body, 600L, &http_status);
-    std::cerr << "[DEBUG] httpPostAI: HTTP " << http_status << " body_len=" << response.size()
-              << " url=" << url << std::endl;
-    if (!response.empty())
-        std::cerr << "[DEBUG] httpPostAI response (first 300): " << response.substr(0, 300) << std::endl;
     const bool is_server_failure = response.empty() || (http_status >= 500 && hasTopLevelError(response));
     if (is_server_failure) {
-        std::cerr << "[WARN] httpPostAI: HTTP " << http_status << " empty/error, retrying in 5s..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(5));
         response = httpRequest(url, "POST", headers, body, 600L, &http_status);
-        std::cerr << "[DEBUG] httpPostAI retry: HTTP " << http_status << " body_len=" << response.size() << std::endl;
-        if (!response.empty())
-            std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
     }
     // Check fatal status codes first — before body inspection, since some
     // providers use non-standard body formats (e.g. "detail" instead of "error").
@@ -210,10 +195,6 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
 
 static bool isOllamaLocal(const std::string& provider) {
     return provider == "ollama_local";
-}
-
-static bool isOllamaProvider(const std::string& provider) {
-    return provider == "ollama_local" || provider == "ollama_cloud";
 }
 
 static bool supportsJsonMode(const std::string& provider) {
@@ -417,13 +398,11 @@ std::string cleanTemplateText(const std::string& raw) {
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 int main() {
-    // Initialize curl globalization
     curl_global_init(CURL_GLOBAL_ALL);
 
-    // Resolve project root directory
     fs::path root = fs::current_path();
     std::string folder_name = root.filename().string();
-    if (folder_name.rfind("cmake-build-", 0) == 0) {
+    if (folder_name.rfind("cmake-build-", 0) == 0) { // cmake-build-* = CLion output dir, step up
         root = root.parent_path();
     }
     base_dir = root.string();
@@ -490,10 +469,7 @@ int main() {
 
     httplib::Server server;
 
-    // Serve static files (CSS, JS)
     server.set_mount_point("/", (base_dir + "/frontend").c_str());
-    
-    // Serve index.html for root path
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/index.html");
     });
@@ -753,7 +729,6 @@ int main() {
                 kf << json{{"api_key", new_key}}.dump(2);
             }
 
-            // Read, patch, write config_v2.json
             json cfg_json;
             {
                 std::ifstream f(configPath());
@@ -768,8 +743,6 @@ int main() {
                 if (!f.is_open()) throw std::runtime_error("Could not write config_v2.json");
                 f << cfg_json.dump(2);
             }
-
-            // Hot-reload in memory
             {
                 std::unique_lock<std::shared_mutex> cfglock(config_v2_mutex);
                 config_v2 = loadConfigV2();
@@ -901,7 +874,6 @@ int main() {
 
             const auto& answers = body["answers"];
             
-            // Build prompt for LLM to generate markdown profile
             std::string questions[] = {
                 "CV Drop",
                 "Career Goal (3–5 Years)",
@@ -1013,7 +985,6 @@ then trigger a profile refresh to update the narrative.*
             
             std::string markdownContent = extractBlock(accumulatedResponse, "markdown");
             
-            // Save to file
             std::string markdownPath = base_dir + "/config/user_profile.md";
             std::ofstream outfile(markdownPath);
             if (!outfile.is_open()) {
@@ -1181,7 +1152,6 @@ then trigger a profile refresh to update the narrative.*
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
         
-        // Read profile from markdown file
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
         if (!file.is_open()) {
@@ -1214,7 +1184,6 @@ then trigger a profile refresh to update the narrative.*
                 return;
             }
 
-            // Build prompt
             std::string prompt = buildFitcheckPrompt(profileContent, cleaned);
 
             auto ai = snapshotAiConfig();
@@ -1612,7 +1581,6 @@ then trigger a profile refresh to update the narrative.*
     }
     sqlite3_close(db);
     
-    // Cleanup curl globalization
     curl_global_cleanup();
     
     return 0;
