@@ -243,7 +243,4 @@ export function renderDetail() {
   setupActionBar(status);
   setupEventHandlers(status, document.getElementById('badge-rating-stars'));
   setupRecheckButton();
-
-  const saveNotesBtn = document.getElementById('save-notes-btn');
-  if (saveNotesBtn) saveNotesBtn.addEventListener('click', () => saveNotes());
 }

@@ -207,35 +207,8 @@ export function unhoverStar() {
 }
 
 // ============================================================================
-// Background Jobs (Scrape, Fetch Details, Fit-Check)
+// Background Jobs
 // ============================================================================
-
-async function runBackgroundJob(options) {
-  const { buttonId, loadingText, originalText, apiUrl, apiMethod = 'POST', successMessage, sortBy = 'score' } = options;
-  
-  const button = setButtonLoading(buttonId, loadingText, originalText);
-  if (!button) return;
-  
-  try {
-    const response = await fetch(apiUrl, { method: apiMethod });
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Request failed');
-    }
-
-    showToast(successMessage(data));
-    
-    setTimeout(async () => {
-      resetButton(button, originalText);
-      await refreshJobs(sortBy);
-    }, 2000);
-    
-  } catch (error) {
-    showToast(`${loadingText.replace('...', '')} failed: ${error.message}`, true);
-    resetButton(button, originalText);
-  }
-}
 
 export async function scrapeJobs() {
   const button = setButtonLoading('scrape-btn', 'Scraping...', '⊕ Scrape Jobs.ch');

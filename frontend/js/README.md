@@ -24,7 +24,7 @@ js/
 
 | Module | Imports | Exports |
 |---|---|---|
-| `api.js` | — | API URLs (`GET_URL`, `UPDATE_URL`, `SCRAPE_URL`, `DETAILS_URL`, `CONFIG_GET_URL`, `CONFIG_POST_URL`, `AI_CONFIG_GET_URL`, `AI_CONFIG_POST_URL`, `PROFILE_GET_URL`, `PROFILE_SAVE_URL`, `FITCHECK_URL`, `IMPORT_TEXT_URL`) |
+| `api.js` | — | API URLs (`GET_URL`, `UPDATE_URL`, `SCRAPE_URL`, `DETAILS_URL`, `CONFIG_URL`, `PROFILE_GET_URL`, `PROFILE_SAVE_URL`, `FITCHECK_URL`, `FITCHECK_PROGRESS_URL`, `IMPORT_TEXT_URL`, `VERSION_URL`) |
 | `state.js` | — | `state` object |
 | `utils/formatting.js` | — | `escapeHtml()`, `fmtDate()`, `getStatusIcon()` |
 | `header.js` | `state`, `renderList` | `setConnectionStatus`, `onSearch`, `clearSearch`, `updateStats`, `setFilter`, `toggleSort` |
