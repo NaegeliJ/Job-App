@@ -3,6 +3,7 @@ import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, IMPORT_TEXT
 import { renderDetail } from './detail.js';
 import { renderList } from './job-list.js';
 import { updateStats, setConnectionStatus } from './header.js';
+import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
 // Helper Functions
@@ -117,33 +118,33 @@ export async function setRating(stars) {
   showToast(`${stars} star${plural}`);
 }
 
-export async function setExpired() {
+export function setExpired() {
   if (!state.currentJob) return;
 
   const jobTitle = state.currentJob.title;
-  if (!confirm(`Delete "${jobTitle}"? It won't reappear on next scrape.`)) return;
+  showConfirm(`Delete "${jobTitle}"? It won't reappear on next scrape.`, async () => {
+    try {
+      await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}/soft-delete`, {
+        method: 'POST'
+      });
 
-  try {
-    await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}/soft-delete`, {
-      method: 'POST'
-    });
+      state.allJobs = state.allJobs.filter(j => j.job_id !== state.currentJob.job_id);
+      state.currentJob = null;
 
-    state.allJobs = state.allJobs.filter(j => j.job_id !== state.currentJob.job_id);
-    state.currentJob = null;
+      document.getElementById('action-bar').style.display = 'none';
+      document.getElementById('detail-scroll').innerHTML = `
+        <div class="empty">
+          <div class="empty-i">⌖</div>
+          <div class="empty-t">Select a position</div>
+        </div>`;
 
-    document.getElementById('action-bar').style.display = 'none';
-    document.getElementById('detail-scroll').innerHTML = `
-      <div class="empty">
-        <div class="empty-i">⌖</div>
-        <div class="empty-t">Select a position</div>
-      </div>`;
-
-    renderList();
-    updateStats();
-    showToast('Job deleted');
-  } catch (error) {
-    showToast('Delete failed', true);
-  }
+      renderList();
+      updateStats();
+      showToast('Job deleted');
+    } catch (error) {
+      showToast('Delete failed', true);
+    }
+  });
 }
 
 async function bulkDelete(body) {

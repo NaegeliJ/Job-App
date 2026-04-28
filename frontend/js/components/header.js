@@ -1,5 +1,6 @@
 import state from '../state.js';
 import { renderList } from './job-list.js';
+import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
 // Connection Status
@@ -208,20 +209,21 @@ export function updateBulkDeleteMenu() {
     : '<span class="bulk-del-empty">Nothing to clean up</span>';
 
   menu.querySelectorAll('.bulk-del-item').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', () => {
       const label = btn.textContent;
-        if (!confirm(`${label}?\n\nThis cannot be undone.`)) return;
-      menu.classList.remove('open');
-      try {
-        const body = btn.dataset.action === 'fitlabel'
-          ? { fit_label: btn.dataset.label }
-          : { status: btn.dataset.status, older_than_days: parseInt(btn.dataset.days, 10) };
-        const deleted = await bulkDeleteRequest(body);
-        toastBulk(`Deleted ${deleted} jobs`);
-        updateBulkDeleteMenu();
-      } catch (e) {
-        toastBulk(e.message, true);
-      }
+      showConfirm(`${label}? This cannot be undone.`, async () => {
+        menu.classList.remove('open');
+        try {
+          const body = btn.dataset.action === 'fitlabel'
+            ? { fit_label: btn.dataset.label }
+            : { status: btn.dataset.status, older_than_days: parseInt(btn.dataset.days, 10) };
+          const deleted = await bulkDeleteRequest(body);
+          toastBulk(`Deleted ${deleted} jobs`);
+          updateBulkDeleteMenu();
+        } catch (e) {
+          toastBulk(e.message, true);
+        }
+      });
     });
   });
 }
