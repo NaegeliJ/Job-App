@@ -272,6 +272,8 @@ export async function triggerFitCheck() {
   const button = setButtonLoading('fitcheck-btn', 'Analyzing...', '🤖 Fit-Check');
   if (!button) return;
 
+  button.classList.remove('error');
+  button.removeAttribute('title');
   button.style.setProperty('--fitcheck-progress', 0);
 
   const pollInterval = setInterval(async () => {
@@ -291,7 +293,13 @@ export async function triggerFitCheck() {
 
     clearInterval(pollInterval);
 
-    if (!response.ok) throw new Error(data.error || 'Request failed');
+    if (!response.ok) {
+      const msg = data.error_code === 'rate_limit'     ? 'Rate limit reached — try again later'   :
+                  data.error_code === 'no_credits'     ? 'API credits exhausted'                   :
+                  data.error_code === 'invalid_api_key' ? 'Invalid API key — check Settings'       :
+                  data.error || 'Request failed';
+      throw new Error(msg);
+    }
 
     button.style.setProperty('--fitcheck-progress', 100);
     showToast(`Fit-check complete: ${data.checked} jobs, ${data.failed} failed`);
@@ -305,8 +313,10 @@ export async function triggerFitCheck() {
   } catch (error) {
     clearInterval(pollInterval);
     showToast(`Fit-check failed: ${error.message}`, true);
-    resetButton(button, '🤖 Fit-Check');
+    resetButton(button, '⚠ Fit-Check');
     button.style.removeProperty('--fitcheck-progress');
+    button.classList.add('error');
+    button.title = error.message;
   }
 }
 

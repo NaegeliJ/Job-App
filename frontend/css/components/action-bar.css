@@ -84,6 +84,7 @@
 .scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: var(--green-dim); }
 .fitcheck-btn { position: relative; overflow: hidden; }
 .fitcheck-btn:hover  { border-color: var(--purple); }
+.fitcheck-btn.error  { border-color: rgba(248, 113, 113, 0.45); color: var(--red); }
 .fitcheck-btn.running { border-color: rgba(167, 139, 250, 0.45); color: var(--purple); background: transparent; }
 .fitcheck-btn.running::before {
   content: '';

@@ -23,6 +23,15 @@ static std::string base_dir;
 static std::string s_config_path;
 static std::string s_system_prompt_path;
 
+class FatalAiError : public std::runtime_error {
+public:
+    FatalAiError(const std::string& code, const std::string& message)
+        : std::runtime_error(message), error_code_(code) {}
+    const std::string& code() const { return error_code_; }
+private:
+    std::string error_code_;
+};
+
 struct AiSnapshot {
     std::string provider, model, endpoint;
     int max_tokens, top_k;
@@ -156,10 +165,11 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
             std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
     }
     if (response.empty() || hasTopLevelError(response)) {
+        if (http_status == 401) throw FatalAiError("invalid_api_key", "Invalid API key (HTTP 401)");
+        if (http_status == 402) throw FatalAiError("no_credits",      "Insufficient API credits (HTTP 402)");
+        if (http_status == 429) throw FatalAiError("rate_limit",      "Rate limit reached (HTTP 429)");
         std::string err_msg = "HTTP " + std::to_string(http_status) + " from " + url;
-        if (!response.empty()) {
-            err_msg += ": " + response.substr(0, 500);
-        }
+        if (!response.empty()) err_msg += ": " + response.substr(0, 500);
         throw std::runtime_error(err_msg);
     }
     return response;
@@ -1068,44 +1078,56 @@ then trigger a profile refresh to update the narrative.*
         fitcheck_progress.running = true;
 
         int checked = 0, failed = 0;
-        for (auto& job : jobs) {
-            try {
-                std::string cleaned = cleanTemplateText(job.template_text);
-                if (cleaned.empty()) {
-                    std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+        try {
+            for (auto& job : jobs) {
+                try {
+                    std::string cleaned = cleanTemplateText(job.template_text);
+                    if (cleaned.empty()) {
+                        std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+                        failed++;
+                        fitcheck_progress.failed++;
+                        fitcheck_progress.done++;
+                        continue;
+                    }
+
+                    std::string prompt = buildFitcheckPrompt(content, cleaned);
+
+                    json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
+                                                  ai.temperature, ai.top_p, ai.top_k);
+
+                    std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
+
+                    std::string accumulated = parseStreamingResponse(response);
+                    if (accumulated.empty()) throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
+                    json fit_data = extractJsonFromResponse(accumulated);
+                    {
+                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        save_fit_result_v2(db, job.job_id,
+                                           fit_data.value("fit_score", 0),
+                                           fit_data.value("fit_label", "Unknown"),
+                                           fit_data.value("fit_summary", ""),
+                                           fit_data.value("fit_reasoning", ""),
+                                           "md_file_profile");
+                    }
+                    checked++;
+                    fitcheck_progress.done++;
+                    std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
+
+                } catch (const FatalAiError&) {
+                    throw;
+                } catch (const std::exception& e) {
+                    std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
                     failed++;
-                    continue;
+                    fitcheck_progress.failed++;
+                    fitcheck_progress.done++;
                 }
-
-                std::string prompt = buildFitcheckPrompt(content, cleaned);
-
-                json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
-                                              ai.temperature, ai.top_p, ai.top_k);
-
-                std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
-
-                std::string accumulated = parseStreamingResponse(response);
-                if (accumulated.empty()) throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
-                json fit_data = extractJsonFromResponse(accumulated);
-                {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
-                     save_fit_result_v2(db, job.job_id,
-                                       fit_data.value("fit_score", 0),
-                                       fit_data.value("fit_label", "Unknown"),
-                                       fit_data.value("fit_summary", ""),
-                                       fit_data.value("fit_reasoning", ""),
-                                       "md_file_profile");
-                }
-                checked++;
-                fitcheck_progress.done++;
-                std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
-
-            } catch (const std::exception& e) {
-                std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
-                failed++;
-                fitcheck_progress.failed++;
-                fitcheck_progress.done++;
             }
+        } catch (const FatalAiError& e) {
+            std::cerr << "[ERROR] Fatal AI error during fit-check: " << e.what() << std::endl;
+            fitcheck_progress.running = false;
+            res.status = 500;
+            res.set_content(json{{"ok", false}, {"error_code", e.code()}, {"error", e.what()}}.dump(), "application/json");
+            return;
         }
 
         fitcheck_progress.running = false;
