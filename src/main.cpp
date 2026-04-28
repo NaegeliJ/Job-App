@@ -187,6 +187,15 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
         if (!response.empty())
             std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
     }
+    // Check fatal status codes first — before body inspection, since some
+    // providers use non-standard body formats (e.g. "detail" instead of "error").
+    if (http_status == 401 || http_status == 403)
+        throw FatalAiError("invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")");
+    if (http_status == 402)
+        throw FatalAiError("no_credits", "Insufficient API credits (HTTP 402)");
+    if (http_status == 429)
+        throw FatalAiError("rate_limit", "Rate limit reached (HTTP 429)");
+
     if (response.empty() || hasTopLevelError(response)) {
         auto [err_code, err_msg] = classifyAiError(http_status, response);
         if (!err_code.empty()) throw FatalAiError(err_code, err_msg);
