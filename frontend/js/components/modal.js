@@ -1,5 +1,5 @@
 import state from '../state.js';
-import { CONFIG_GET_URL, CONFIG_POST_URL, VERSION_URL } from '../api.js';
+import { CONFIG_URL, VERSION_URL } from '../api.js';
 import { showToast } from './actions.js';
 import { escapeHtml } from '../utils/formatting.js';
 
@@ -30,7 +30,7 @@ export async function openSettings() {
 
   try {
     const [cfgRes, aiRes] = await Promise.all([
-      fetch(CONFIG_GET_URL),
+      fetch(CONFIG_URL),
       fetch('/api/config/ai')
     ]);
     rawConfig = await cfgRes.json();
@@ -287,7 +287,7 @@ export async function saveSettings() {
       top_k:       getIntValue('cfg-fc-top-k', 64)
     };
 
-    const cfgRes = await fetch(CONFIG_POST_URL, {
+    const cfgRes = await fetch(CONFIG_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updated)

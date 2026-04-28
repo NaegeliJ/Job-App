@@ -1,6 +1,6 @@
 import state from './state.js';
 import { GET_URL, PROFILE_GET_URL } from './api.js';
-import { setConnectionStatus, updateStats, onSearch, clearSearch, setFilter, toggleSort } from './components/header.js';
+import { setConnectionStatus, updateStats, onSearch, clearSearch, setFilter, toggleSort, initBulkDeleteDropdown } from './components/header.js';
 import { renderList, selectJob } from './components/job-list.js';
 import { closeSettings, openSettings, saveSettings } from './components/modal.js';
 import { setStatus, setRating, hoverStar, unhoverStar, setExpired, saveNotes, scrapeJobs, triggerFitCheck, openProfile, closeProfile, saveProfile, openOnboarding, importJobFromText, saveImportUrl, openImportModal, closeImportModal } from './components/actions.js';
@@ -32,15 +32,12 @@ async function init() {
   }
 }
 
-// Helper to safely add event listener
 function onClick(id, handler) {
   const el = document.getElementById(id);
   if (el) el.addEventListener('click', handler);
 }
 
-// Bind all UI events
 function bindEvents() {
-  // Filter dropdown toggle
   const filterDropdownBtn = document.getElementById('filter-dropdown-btn');
   const filterDropdownMenu = document.getElementById('filter-dropdown-menu');
   if (filterDropdownBtn && filterDropdownMenu) {
@@ -56,21 +53,14 @@ function bindEvents() {
     });
   }
 
-  // Filter buttons (inside dropdown)
   document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      setFilter(btn, btn.dataset.filter);
-    });
+    btn.addEventListener('click', () => setFilter(btn, btn.dataset.filter));
   });
 
-  // Search
   const searchInput = document.getElementById('search-input');
-  if (searchInput) {
-    searchInput.addEventListener('input', onSearch);
-  }
+  if (searchInput) searchInput.addEventListener('input', onSearch);
   onClick('search-clear', clearSearch);
 
-  // Tool buttons
   onClick('scrape-btn', scrapeJobs);
   onClick('import-job-btn', openImportModal);
   onClick('profile-btn', openProfile);
@@ -81,11 +71,10 @@ function bindEvents() {
   onClick('onboard-btn', openOnboarding);
   onClick('fitcheck-btn', triggerFitCheck);
   onClick('settings-btn', openSettings);
-
-  // Sort button
   onClick('sort-btn', toggleSort);
 
-  // Job list - event delegation
+  initBulkDeleteDropdown();
+
   const jobList = document.getElementById('job-list');
   if (jobList) {
     jobList.addEventListener('click', e => {
@@ -96,38 +85,29 @@ function bindEvents() {
     });
   }
 
-  // Action bar buttons
   onClick('btn-i', () => setStatus('interested'));
   onClick('btn-a', () => setStatus('applied'));
   onClick('btn-s', () => setStatus('skipped'));
   onClick('btn-e', setExpired);
 
-  // Modal buttons
   onClick('modal-close', closeSettings);
   onClick('modal-cancel-btn', closeSettings);
   onClick('modal-save-btn', saveSettings);
 
-  // Import modal buttons
   onClick('import-close', closeImportModal);
   onClick('import-cancel-btn', closeImportModal);
   onClick('import-btn', importJobFromText);
   onClick('import-url-save-btn', saveImportUrl);
   onClick('import-url-skip-btn', closeImportModal);
 
-  // Modal overlay click
   const modalOverlay = document.getElementById('settings-overlay');
   if (modalOverlay) {
-    modalOverlay.addEventListener('mousedown', e => {
-      state._modalMousedownTarget = e.target;
-    });
+    modalOverlay.addEventListener('mousedown', e => { state._modalMousedownTarget = e.target; });
     modalOverlay.addEventListener('click', e => {
-      if (e.target === modalOverlay && state._modalMousedownTarget === modalOverlay) {
-        closeSettings();
-      }
+      if (e.target === modalOverlay && state._modalMousedownTarget === modalOverlay) closeSettings();
     });
   }
 
-  // Profile modal overlay click
   const profileOverlay = document.getElementById('profile-overlay');
   if (profileOverlay) {
     profileOverlay.addEventListener('mousedown', e => { state._profileModalMousedownTarget = e.target; });
@@ -136,23 +116,16 @@ function bindEvents() {
     });
   }
 
-  // Import modal overlay click
   const importOverlay = document.getElementById('import-overlay');
   if (importOverlay) {
-    importOverlay.addEventListener('mousedown', e => {
-      state._importModalMousedownTarget = e.target;
-    });
+    importOverlay.addEventListener('mousedown', e => { state._importModalMousedownTarget = e.target; });
     importOverlay.addEventListener('click', e => {
-      if (e.target === importOverlay && state._importModalMousedownTarget === importOverlay) {
-        closeImportModal();
-      }
+      if (e.target === importOverlay && state._importModalMousedownTarget === importOverlay) closeImportModal();
     });
   }
 
-  // Detail panel - event delegation for dynamic content
   const detailScroll = document.getElementById('detail-scroll');
   if (detailScroll) {
-    // Star ratings and save notes
     detailScroll.addEventListener('click', e => {
       const star = e.target.closest('.star');
       if (star) {
@@ -178,7 +151,6 @@ function bindEvents() {
   }
 }
 
-// Keyboard listeners
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeSettings();
@@ -199,7 +171,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Initialize app on DOMContentLoaded
 document.addEventListener('DOMContentLoaded', () => {
   init();
   initConsole();

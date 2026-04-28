@@ -180,6 +180,8 @@ function setupRecheckButton() {
   recheckBtn.addEventListener('click', async () => {
     if (!state.currentJob || recheckBtn.classList.contains('running')) return;
 
+    recheckBtn.classList.remove('error');
+    recheckBtn.removeAttribute('title');
     recheckBtn.disabled = true;
     recheckBtn.classList.add('running');
     recheckBtn.innerHTML = '<span class="spin">⟳</span> Checking...';
@@ -190,23 +192,32 @@ function setupRecheckButton() {
       });
       const data = await response.json();
 
-      if (response.ok) {
-        Object.assign(state.currentJob, data);
-        const idx = state.allJobs.findIndex(j => j.job_id === state.currentJob.job_id);
-        if (idx !== -1) Object.assign(state.allJobs[idx], data);
-
-        renderDetail();
-        import('./job-list.js').then(m => m.renderList());
-        showToast('Fit-check complete');
-      } else {
-        throw new Error(data.error || 'Fit-check failed');
+      if (!response.ok) {
+        const msg = data.error_code === 'rate_limit'      ? 'Rate limit reached — try again later'      :
+                    data.error_code === 'no_credits'      ? 'API credits exhausted'                      :
+                    data.error_code === 'invalid_api_key' ? 'Invalid API key — check Settings'           :
+                    data.error_code === 'unreachable'     ? 'AI provider unreachable — is it running?'   :
+                    data.error || 'Fit-check failed';
+        throw new Error(msg);
       }
-    } catch (e) {
-      showToast('Fit-check failed: ' + e.message, true);
-    } finally {
+
+      Object.assign(state.currentJob, data);
+      const idx = state.allJobs.findIndex(j => j.job_id === state.currentJob.job_id);
+      if (idx !== -1) Object.assign(state.allJobs[idx], data);
+
+      renderDetail();
+      import('./job-list.js').then(m => m.renderList());
+      showToast('Fit-check complete');
       recheckBtn.disabled = false;
       recheckBtn.classList.remove('running');
       recheckBtn.innerHTML = '🔄 Redo Fit-Check';
+    } catch (e) {
+      showToast('Fit-check failed: ' + e.message, true);
+      recheckBtn.disabled = false;
+      recheckBtn.classList.remove('running');
+      recheckBtn.innerHTML = '⚠ Redo Fit-Check';
+      recheckBtn.classList.add('error');
+      recheckBtn.title = e.message;
     }
   });
 }
@@ -232,7 +243,4 @@ export function renderDetail() {
   setupActionBar(status);
   setupEventHandlers(status, document.getElementById('badge-rating-stars'));
   setupRecheckButton();
-
-  const saveNotesBtn = document.getElementById('save-notes-btn');
-  if (saveNotesBtn) saveNotesBtn.addEventListener('click', () => saveNotes());
 }

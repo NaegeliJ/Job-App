@@ -1,122 +1,113 @@
+/* Catppuccin Macchiato
+   base:#24273a  mantle:#1e2030  crust:#181926
+   surface0:#363a4f  surface1:#494d64  surface2:#5b6078
+   overlay0:#6e738d  overlay1:#8087a2  overlay2:#939ab7
+   text:#cad3f5  subtext1:#b8c0e0  subtext0:#a5adcb
+   blue:#8aadf4  sky:#91d7e3  sapphire:#7dc4e4  teal:#8bd5ca
+   green:#a6da95  yellow:#eed49f  peach:#f5a97f
+   mauve:#c6a0f6  pink:#f5bde6  red:#ed8796
+   lavender:#b7bdf8  rosewater:#f4dbd6                     */
+
 .console-overlay {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #0a0a0c;
-  border-top: 1px solid #1e1e24;
+  bottom: 0; left: 0; right: 0;
+  background: #24273a;
+  border-top: 1px solid #494d64;
   z-index: 1000;
   display: none;
   flex-direction: column;
-  max-height: 340px;
+  max-height: 480px;
 }
-
-.console-overlay.show {
-  display: flex;
-}
+.console-overlay.show { display: flex; }
 
 .console-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 16px;
-  background: #0e0e12;
-  border-bottom: 1px solid #1e1e24;
+  padding: 5px 16px;
+  background: #1e2030;
+  border-bottom: 1px solid #363a4f;
+  flex-shrink: 0;
 }
-
 .console-title {
-  font-size: 10px;
-  font-weight: 600;
-  color: #555;
+  font-size: 9px;
+  font-weight: 700;
+  color: #5b6078;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   font-family: 'JetBrains Mono', monospace;
 }
-
 .console-close {
   background: none;
   border: none;
-  color: #555;
-  font-size: 16px;
+  color: #5b6078;
+  font-size: 15px;
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
+  transition: color 0.15s;
 }
-
-.console-close:hover {
-  color: #aaa;
-}
+.console-close:hover { color: #cad3f5; }
 
 .console-output {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 10px 16px 6px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
-.console-line {
-  margin-bottom: 2px;
-}
+/* Line types */
+.console-line         { margin-bottom: 0; white-space: pre; }
+.console-line.output  { color: #cad3f5; }
+.console-line.error   { color: #ed8796; }
+.console-line.success { color: #a6da95; }
+.console-line.system  { color: #6e738d; font-style: italic; }
+.console-line.echo    { color: #494d64; }
 
-.console-line.output {
-  color: #b0b0b8;
-}
-
-.console-line.error {
-  color: #f87171;
-}
-
-.console-line.success {
-  color: #34d399;
-}
-
-.console-line.system {
-  color: #555;
-  font-style: italic;
-}
+/* Help layout */
+.h-section { color: #c6a0f6; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.h-note    { color: #5b6078; font-style: italic; margin-left: 8px; font-weight: 400; }
+.h-cmd     { display: inline-block; width: 22ch; color: #8aadf4; }
+.h-arg     { display: inline-block; width: 10ch; color: #f5a97f; }
+.h-desc    { color: #8087a2; }
 
 .console-input-row {
   display: flex;
   align-items: center;
-  padding: 10px 16px;
-  border-top: 1px solid #1a1a1f;
-  background: #0c0c10;
+  padding: 8px 16px;
+  border-top: 1px solid #363a4f;
+  background: #1e2030;
+  flex-shrink: 0;
 }
-
 .console-prompt {
-  color: #34d399;
+  color: #a6da95;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12.5px;
-  font-weight: 600;
-  margin-right: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-right: 10px;
+  user-select: none;
 }
-
 .console-input {
   flex: 1;
   background: transparent;
   border: none;
-  color: #d4d4d8;
+  color: #cad3f5;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12.5px;
+  font-size: 12px;
   outline: none;
-  caret-color: #60a5fa;
+  caret-color: #cad3f5;
 }
-
-.console-input::placeholder {
-  color: #444;
-}
+.console-input::placeholder { color: #363a4f; }
 
 .console-hint {
-  padding: 6px 16px;
-  background: #0e0e12;
-  border-top: 1px solid #1a1a1f;
-  font-size: 10px;
-  color: #444;
+  padding: 4px 16px;
+  background: #1e2030;
+  border-top: 1px solid #363a4f;
+  font-size: 9px;
+  color: #494d64;
   font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
 }
-
-.console-hint strong {
-  color: #666;
-}
+.console-hint strong { color: #6e738d; }

@@ -23,7 +23,8 @@ frontend/
     ├── api.js              # API endpoints
     ├── state.js            # Global state
     ├── utils/
-    │   └── formatting.js   # escapeHtml(), fmtDate()
+    │   ├── formatting.js   # escapeHtml(), fmtDate()
+    │   └── confirm.js      # confirmDialog() — custom modal replace window.confirm()
     └── components/
         ├── header.js       # Search, filters, stats
         ├── job-list.js     # List rendering

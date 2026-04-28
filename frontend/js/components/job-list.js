@@ -42,7 +42,7 @@ function matchesSearch(job, query) {
 }
 
 function filterJobs(jobs, currentFilter, searchQuery) {
-  return jobs.filter(job => {
+  return jobs.filter(job => job.user_status !== 'deleted').filter(job => {
     const passesFilter = matchesFilter(job, currentFilter);
     const passesSearch = matchesSearch(job, searchQuery);
     return passesFilter && passesSearch;
@@ -125,7 +125,7 @@ export function renderList() {
 
   // Render empty state or list
   if (filteredJobs.length === 0) {
-    jobListElement.innerHTML = '<div class="ldw">No Jobs in Database</div>';
+    jobListElement.innerHTML = '<div class="empty"><div class="empty-t">No jobs</div></div>';
     return;
   }
 

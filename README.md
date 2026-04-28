@@ -8,51 +8,32 @@ Personal job-market radar: scrape listings from jobs.ch, score them against your
 2. **Fit-check** — Sends every job + your profile to an LLM. Stores a `fit_label` (Strong, Decent, Experimental, Weak, No Go), a weighted score, and structured reasoning you can read in seconds.
 3. **Track** — Keep notes, set a status (New, Applied, etc.), and rate jobs. Sort, filter, and search everything in the browser.
 
+## Who it's for
+
+- Job seekers who want to stop manually reading hundreds of postings.
+- Anyone with an LLM API endpoint who wants to let AI do the first-pass filtering.
+- Developers who want a hackable, self-hosted C++ + vanilla-JS stack with no bundler and no SaaS.
+
 ## Quick start
 
-Docker only. On a Linux machine with Docker installed:
+Quickstart focuses on Docker only for now. On a linux machine with Docker installed, execute: 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | bash
 ```
 
-Open **http://localhost:8080** and complete onboarding. The first screen lets you pick your AI provider, enter the endpoint and model, and paste your API key. Scraping and fit-checking happen inside the app after that.
+Open **http://localhost:8080** and complete onboarding. The first screen lets you pick your AI provider, enter the endpoint and model, and paste your API key — no file editing required. The CV step accepts a PDF drop (extracted in-browser) or plain paste. Scraping and fit-checking happen inside the app after that.
 
-**WSL users:** Docker does not auto-start on WSL boot. Start manually via `docker start job-app`, or add to `~/.bashrc`:
+**WSL users:** Docker does not auto-start on WSL boot. Start manually via `docker start job-app`, or add to autostart `~/.bashrc` if you want it automatic:
 
 ```bash
 sudo service docker start 2>/dev/null
 cd ~/Job-App && docker compose up -d 2>/dev/null
 ```
 
-## How it works
-
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Scrape    │────▶│  Fit-check  │────▶│   Track     │
-│  jobs.ch    │     │   LLM call  │     │   in UI     │
-└─────────────┘     └─────────────┘     └─────────────┘
-```
-
-1. Click **Scrape** in the UI. The backend hits jobs.ch for each query in `config_v2.json`, saves new listings to SQLite, and fetches full posting text automatically.
-2. Click **Fit-Check**. The backend sends every unscored job + your profile to your LLM endpoint in batches. Results are written back to the DB.
-3. Sort by fit score, filter by label, read AI reasoning, and decide whether to apply.
-
-You can also import a job from pasted text (**Add Job manually**), recheck a single job, or clear all fit data and re-run from the admin console.
-
-> **Disclaimer:** Scraping jobs.ch is done at your own risk. Be reasonable — don't hammer the site with hundreds of requests. Use sensible query limits (`scrape.rows`) and don't run scrapes in a tight loop. This tool is for personal use only.
-
-## Getting good results
-
-1. **Onboarding** — complete onboarding once. Be specific: skills, years of experience, preferred workload, hard no-gos. The more concrete, the better the scoring.
-2. **First scrape** — scrape a small batch (~5 jobs) and run Fit-Check.
-3. **Check the scores** — read the AI reasoning on a few results. Are Strong jobs actually strong? Are Weak ones correctly rejected?
-4. **Tune via Profile** — if the scores are off, open **Profile**, edit your profile text (add constraints, reword skills, clarify deal-breakers), and re-run Fit-Check on the same batch.
-5. **Repeat until calibrated** — once results feel right, the workflow is just: **Scrape → Fit-Check** whenever you want fresh listings.
-
 ## AI provider setup
 
-Provider, endpoint, model, and API key are all configured inside the app — open **Settings** (gear icon) or set them during onboarding.
+Provider, endpoint, model, and API key are all configured inside the app — open **Settings** (gear icon) or set them during onboarding. You do not need to edit config files manually.
 
 **Supported providers (tested):**
 
@@ -67,9 +48,37 @@ Provider, endpoint, model, and API key are all configured inside the app — ope
 
 **Not supported:** Anthropic native API (`x-api-key` header, different request format).
 
+### How the backend builds requests
+
+The backend sends provider-aware requests — not all fields are sent to all providers:
+
+| Field | Ollama (local) | Ollama Cloud / OpenRouter / Mistral | DeepInfra / Custom |
+|-------|---------------|-------------------------------------|--------------------|
+| `format: "json"` | ✅ | — | — |
+| `response_format: {type: "json_object"}` | — | ✅ | — |
+| `top_k` | ✅ | — | — |
+| `stream: false` | ✅ | ✅ | ✅ |
+
+The response is parsed as either Ollama native NDJSON or OpenAI-compatible SSE automatically.
+
+## How it works
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Scrape    │────▶│   Details   │────▶│  Fit-check  │────▶│   Track     │
+│  jobs.ch    │     │ fetch text  │     │   LLM call  │     │   in UI     │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+```
+
+1. Click **Scrape** in the UI. The backend hits jobs.ch for each query in `config_v2.json`, saves new listings to SQLite, then fetches the full posting text.
+2. Click **Fit-Check**. The backend sends every job with `template_text` but no `fit_label` to your LLM endpoint in batches of `limit`. Results are written back to the DB.
+3. Sort by fit score, filter by label, read AI reasoning, and decide whether to apply.
+
+You can also import a job from pasted text (`Import Text`), recheck a single job, or clear all fit data and re-run from the admin console.
+
 ## Configuration
 
-Most settings are editable live in the app (Settings gear). Config files in `config/` on the host survive container rebuilds.
+Most settings are editable live in the app (Settings gear). Config files in `config/` on the host are the source of truth and survive container rebuilds.
 
 ### `api_keys.json`
 
@@ -96,7 +105,7 @@ Controls scraping and LLM parameters. Editable in Settings without restart.
 | `fitcheck.max_tokens` | Max response tokens per LLM call. |
 | `fitcheck.temperature` | LLM temperature. |
 | `fitcheck.top_p` | Nucleus sampling. |
-| `fitcheck.top_k` | Top-k sampling (Ollama local only). |
+| `fitcheck.top_k` | Top-k sampling (Ollama / some providers). |
 
 ### `system_prompt.txt`
 
@@ -112,6 +121,20 @@ The default prompt asks for structured JSON output including `fit_score`, `fit_l
 ### `user_profile.md`
 
 Created after onboarding (or edited in **Profile**). Plain Markdown describing your skills, constraints, experience, and No-Gos. This is what gets substituted into `{{profile}}` during fit-check.
+
+## Project layout
+
+| Path | Purpose |
+|------|---------|
+| `src/main.cpp` | HTTP server, API endpoints, LLM streaming helpers |
+| `src/db.cpp` | SQLite operations, migrations |
+| `frontend/index.html` | Main SPA |
+| `frontend/onboarding.html` | Onboarding wizard (generates `user_profile.md`) |
+| `frontend/css/` / `frontend/js/` | Vanilla ES6 modules, no bundler |
+| `config/config_v2.json` | Scrape + LLM settings |
+| `config/system_prompt.txt` | Fit-check prompt template |
+| `config/api_keys.json` | API key (gitignored) |
+| `data/` | SQLite database (bind-mounted) |
 
 ## Admin console
 
@@ -130,9 +153,10 @@ bash update.sh
 
 Downloads the latest version and rebuilds the container. Database and config survive.
 
-To follow logs:
+## Logs
 
 ```bash
+cd ~/Job-App
 docker compose logs -f
 ```
 
@@ -145,6 +169,7 @@ docker compose logs -f
 | LLM returns empty response or times out | The backend retries once automatically. If it still fails, check that the model name is correct and the endpoint returns JSON/SSE correctly. Backend timeout is fixed at 600s. |
 | Scrape returns 0 jobs | Verify `scrape.queries` in `config_v2.json`. Check logs for HTTP errors from jobs.ch. |
 | Onboarding or profile not saving | Profile is written to `config/user_profile.md`. Check that the `config/` volume mount is working and the container can write there. |
+| PDF drop shows no text | PDF.js extracts text from selectable PDFs only — scanned/image PDFs yield nothing. Paste CV text manually instead. |
 | Fit-check is slow | Increase `fitcheck.limit` if your endpoint handles concurrency well. Decrease if you hit rate limits. Check `max_tokens` — too high wastes time on long reasoning. |
 
 ## Uninstall
@@ -164,8 +189,25 @@ cd ~
 rm -rf ~/Job-App
 ```
 
-Also remove the image to free disk space:
+Also remove the image if you want to free disk space:
 
 ```bash
 docker compose down --rmi all
 ```
+
+## Local build (no Docker)
+
+```bash
+# Dependencies
+sudo apt install -y cmake g++ make libsqlite3-dev libcurl4-openssl-dev
+
+# Build
+rm -rf cmake-build-debug && mkdir cmake-build-debug
+cd cmake-build-debug && cmake .. && cd ..
+cmake --build cmake-build-debug
+
+# Run
+./cmake-build-debug/Job_App
+```
+
+The server starts on port 8080. Make sure `config/` and `data/` exist next to the binary.

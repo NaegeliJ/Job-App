@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <random>
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
 #include <filesystem>
@@ -21,6 +22,38 @@ namespace fs = std::filesystem;
 static std::string base_dir;
 static std::string s_config_path;
 static std::string s_system_prompt_path;
+
+class FatalAiError : public std::runtime_error {
+public:
+    FatalAiError(const std::string& code, const std::string& message)
+        : std::runtime_error(message), error_code_(code) {}
+    const std::string& code() const { return error_code_; }
+private:
+    std::string error_code_;
+};
+
+// Returns {error_code, message} for fatal AI errors, or {"",""} for per-job errors.
+static std::pair<std::string,std::string> classifyAiError(long http_status, const std::string& body) {
+    if (http_status == 429) return {"rate_limit",      "Rate limit reached (HTTP 429)"};
+    if (http_status == 402) return {"no_credits",      "Insufficient API credits (HTTP 402)"};
+    if (http_status == 401 || http_status == 403)
+        return {"invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")"};
+
+    if ((http_status == 400 || http_status == 0) && !body.empty()) {
+        std::string lower = body;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        for (const auto& kw : {"invalid_api_key", "invalid api key", "incorrect api key",
+                                "authentication_error", "authentication failed", "unauthorized"}) {
+            if (lower.find(kw) != std::string::npos)
+                return {"invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")"};
+        }
+        if (lower.find("credit") != std::string::npos || lower.find("billing") != std::string::npos)
+            return {"no_credits", "Insufficient API credits (HTTP " + std::to_string(http_status) + ")"};
+        if (lower.find("rate limit") != std::string::npos || lower.find("too many requests") != std::string::npos)
+            return {"rate_limit", "Rate limit reached (HTTP " + std::to_string(http_status) + ")"};
+    }
+    return {"", ""};
+}
 
 struct AiSnapshot {
     std::string provider, model, endpoint;
@@ -117,13 +150,6 @@ std::string httpGet(const std::string& url) {
     });
 }
 
-std::string httpPost(const std::string& url, const std::string& apiKey, const std::string& body) {
-    return httpRequest(url, "POST", {
-        "Content-Type: application/json",
-        "Authorization: Bearer " + apiKey
-    }, body);
-}
-
 // AI inference calls need a longer timeout — model inference can take several minutes.
 // Retries once on empty response (handles cold-start drops from cloud providers).
 std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body) {
@@ -141,28 +167,34 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
     };
     long http_status = 0;
     std::string response = httpRequest(url, "POST", headers, body, 600L, &http_status);
-    std::cerr << "[DEBUG] httpPostAI: HTTP " << http_status << " body_len=" << response.size()
-              << " url=" << url << std::endl;
-    if (!response.empty())
-        std::cerr << "[DEBUG] httpPostAI response (first 300): " << response.substr(0, 300) << std::endl;
     const bool is_server_failure = response.empty() || (http_status >= 500 && hasTopLevelError(response));
     if (is_server_failure) {
-        std::cerr << "[WARN] httpPostAI: HTTP " << http_status << " empty/error, retrying in 5s..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(5));
         response = httpRequest(url, "POST", headers, body, 600L, &http_status);
-        std::cerr << "[DEBUG] httpPostAI retry: HTTP " << http_status << " body_len=" << response.size() << std::endl;
-        if (!response.empty())
-            std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
+    }
+    // Check fatal status codes first — before body inspection, since some
+    // providers use non-standard body formats (e.g. "detail" instead of "error").
+    if (http_status == 0)
+        throw FatalAiError("unreachable", "AI endpoint unreachable — check provider is running (" + url + ")");
+    if (http_status == 401 || http_status == 403)
+        throw FatalAiError("invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")");
+    if (http_status == 402)
+        throw FatalAiError("no_credits", "Insufficient API credits (HTTP 402)");
+    if (http_status == 429)
+        throw FatalAiError("rate_limit", "Rate limit reached (HTTP 429)");
+
+    if (response.empty() || hasTopLevelError(response)) {
+        auto [err_code, err_msg] = classifyAiError(http_status, response);
+        if (!err_code.empty()) throw FatalAiError(err_code, err_msg);
+        std::string msg = "HTTP " + std::to_string(http_status) + " from " + url;
+        if (!response.empty()) msg += ": " + response.substr(0, 500);
+        throw std::runtime_error(msg);
     }
     return response;
 }
 
 static bool isOllamaLocal(const std::string& provider) {
     return provider == "ollama_local";
-}
-
-static bool isOllamaProvider(const std::string& provider) {
-    return provider == "ollama_local" || provider == "ollama_cloud";
 }
 
 static bool supportsJsonMode(const std::string& provider) {
@@ -366,13 +398,11 @@ std::string cleanTemplateText(const std::string& raw) {
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 int main() {
-    // Initialize curl globalization
     curl_global_init(CURL_GLOBAL_ALL);
 
-    // Resolve project root directory
     fs::path root = fs::current_path();
     std::string folder_name = root.filename().string();
-    if (folder_name.rfind("cmake-build-", 0) == 0) {
+    if (folder_name.rfind("cmake-build-", 0) == 0) { // cmake-build-* = CLion output dir, step up
         root = root.parent_path();
     }
     base_dir = root.string();
@@ -401,6 +431,13 @@ int main() {
     std::mutex db_write_mutex;
 
     std::mutex api_key_mutex;
+
+    struct FitcheckProgress {
+        std::atomic<bool> running{false};
+        std::atomic<int>  done{0};
+        std::atomic<int>  total{0};
+        std::atomic<int>  failed{0};
+    } fitcheck_progress;
 
     ConfigV2 config_v2;
     std::shared_mutex config_v2_mutex;
@@ -432,10 +469,7 @@ int main() {
 
     httplib::Server server;
 
-    // Serve static files (CSS, JS)
     server.set_mount_point("/", (base_dir + "/frontend").c_str());
-    
-    // Serve index.html for root path
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/index.html");
     });
@@ -459,7 +493,7 @@ int main() {
             std::lock_guard<std::mutex> lock(db_write_mutex);
             if (body.contains("user_status")) {
                 std::string status = body["user_status"];
-                if (status != "unseen" && status != "interested" && status != "applied" && status != "skipped")
+                if (status != "unseen" && status != "interested" && status != "applied" && status != "skipped" && status != "deleted")
                     throw std::runtime_error("Invalid user_status: " + status);
                 update_job_field(db, job_id, "user_status", status);
             }
@@ -491,11 +525,65 @@ int main() {
         }
     });
 
+    server.Delete("/api/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            int deleted = 0;
+
+            if (body.contains("fit_label")) {
+                std::string fit_label = body["fit_label"];
+                if (fit_label.empty())
+                    throw std::runtime_error("Missing fit_label value");
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_soft_delete_by_fit_label(db, fit_label);
+            } else {
+                std::string status = body.value("status", "");
+                int older_than_days = body.value("older_than_days", 0);
+
+                if (status.empty())
+                    throw std::runtime_error("Missing 'status' or 'fit_label' field");
+
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_soft_delete_by_status(db, status, older_than_days);
+            }
+
+            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(json{{"error", "bad request"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
     server.Delete("/api/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             std::lock_guard<std::mutex> lock(db_write_mutex);
             delete_job(db, req.path_params.at("id"));
             res.set_content(json{{"ok", true}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/jobs/:id/soft-delete", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            std::lock_guard<std::mutex> lock(db_write_mutex);
+            update_job_field(db, req.path_params.at("id"), "user_status", "deleted");
+            res.set_content(json{{"ok", true}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+        }
+    });
+
+    server.Post("/api/jobs/restore-all", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+        try {
+            int restored;
+            {
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                restored = restore_all_deleted(db);
+            }
+            res.set_content(json{{"ok", true}, {"restored", restored}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
@@ -641,7 +729,6 @@ int main() {
                 kf << json{{"api_key", new_key}}.dump(2);
             }
 
-            // Read, patch, write config_v2.json
             json cfg_json;
             {
                 std::ifstream f(configPath());
@@ -656,8 +743,6 @@ int main() {
                 if (!f.is_open()) throw std::runtime_error("Could not write config_v2.json");
                 f << cfg_json.dump(2);
             }
-
-            // Hot-reload in memory
             {
                 std::unique_lock<std::shared_mutex> cfglock(config_v2_mutex);
                 config_v2 = loadConfigV2();
@@ -789,7 +874,6 @@ int main() {
 
             const auto& answers = body["answers"];
             
-            // Build prompt for LLM to generate markdown profile
             std::string questions[] = {
                 "CV Drop",
                 "Career Goal (3–5 Years)",
@@ -896,12 +980,11 @@ then trigger a profile refresh to update the narrative.*
             std::string accumulatedResponse = parseStreamingResponse(response);
 
             if (accumulatedResponse.empty()) {
-                throw std::runtime_error("Empty response from API");
+                throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
             }
             
             std::string markdownContent = extractBlock(accumulatedResponse, "markdown");
             
-            // Save to file
             std::string markdownPath = base_dir + "/config/user_profile.md";
             std::ofstream outfile(markdownPath);
             if (!outfile.is_open()) {
@@ -961,7 +1044,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
         
@@ -993,45 +1076,75 @@ then trigger a profile refresh to update the narrative.*
 
         std::cout << "[INFO] Starting fit-check for " << jobs.size() << " jobs" << std::endl;
 
+        fitcheck_progress.done    = 0;
+        fitcheck_progress.failed  = 0;
+        fitcheck_progress.total   = static_cast<int>(jobs.size());
+        fitcheck_progress.running = true;
+
         int checked = 0, failed = 0;
-        for (auto& job : jobs) {
-            try {
-                std::string cleaned = cleanTemplateText(job.template_text);
-                if (cleaned.empty()) {
-                    std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+        try {
+            for (auto& job : jobs) {
+                try {
+                    std::string cleaned = cleanTemplateText(job.template_text);
+                    if (cleaned.empty()) {
+                        std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+                        failed++;
+                        fitcheck_progress.failed++;
+                        fitcheck_progress.done++;
+                        continue;
+                    }
+
+                    std::string prompt = buildFitcheckPrompt(content, cleaned);
+
+                    json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
+                                                  ai.temperature, ai.top_p, ai.top_k);
+
+                    std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
+
+                    std::string accumulated = parseStreamingResponse(response);
+                    if (accumulated.empty()) throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
+                    json fit_data = extractJsonFromResponse(accumulated);
+                    {
+                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        save_fit_result_v2(db, job.job_id,
+                                           fit_data.value("fit_score", 0),
+                                           fit_data.value("fit_label", "Unknown"),
+                                           fit_data.value("fit_summary", ""),
+                                           fit_data.value("fit_reasoning", ""),
+                                           "md_file_profile");
+                    }
+                    checked++;
+                    fitcheck_progress.done++;
+                    std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
+
+                } catch (const FatalAiError&) {
+                    throw;
+                } catch (const std::exception& e) {
+                    std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
                     failed++;
-                    continue;
+                    fitcheck_progress.failed++;
+                    fitcheck_progress.done++;
                 }
-
-                std::string prompt = buildFitcheckPrompt(content, cleaned);
-
-                json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
-                                              ai.temperature, ai.top_p, ai.top_k);
-
-                std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
-
-                std::string accumulated = parseStreamingResponse(response);
-                if (accumulated.empty()) throw std::runtime_error("Empty response from API");
-                json fit_data = extractJsonFromResponse(accumulated);
-                {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
-                     save_fit_result_v2(db, job.job_id,
-                                       fit_data.value("fit_score", 0),
-                                       fit_data.value("fit_label", "Unknown"),
-                                       fit_data.value("fit_summary", ""),
-                                       fit_data.value("fit_reasoning", ""),
-                                       "md_file_profile");
-                }
-                checked++;
-                std::cout << "[INFO] Fit-checked: " << job.job_id << std::endl;
-
-            } catch (const std::exception& e) {
-                std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
-                failed++;
             }
+        } catch (const FatalAiError& e) {
+            std::cerr << "[ERROR] Fatal AI error during fit-check: " << e.what() << std::endl;
+            fitcheck_progress.running = false;
+            res.status = 500;
+            res.set_content(json{{"ok", false}, {"error_code", e.code()}, {"error", e.what()}}.dump(), "application/json");
+            return;
         }
 
+        fitcheck_progress.running = false;
         res.set_content(json{{"ok", true}, {"checked", checked}, {"failed", failed}}.dump(), "application/json");
+    });
+
+    server.Get("/api/fitcheck/progress", [&fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{
+            {"running", fitcheck_progress.running.load()},
+            {"done",    fitcheck_progress.done.load()},
+            {"total",   fitcheck_progress.total.load()},
+            {"failed",  fitcheck_progress.failed.load()}
+        }.dump(), "application/json");
     });
 
     // POST /api/jobs/:id/fitcheck — Re-check fit for a single job
@@ -1039,7 +1152,6 @@ then trigger a profile refresh to update the narrative.*
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
         
-        // Read profile from markdown file
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
         if (!file.is_open()) {
@@ -1072,7 +1184,6 @@ then trigger a profile refresh to update the narrative.*
                 return;
             }
 
-            // Build prompt
             std::string prompt = buildFitcheckPrompt(profileContent, cleaned);
 
             auto ai = snapshotAiConfig();
@@ -1096,7 +1207,7 @@ then trigger a profile refresh to update the narrative.*
             std::cout << "[DEBUG] Accumulated response length: " << accumulatedResponse.length() << std::endl;
             if (accumulatedResponse.empty()) {
                 res.status = 500;
-                res.set_content(json{{"error", "Empty response from AI"}}.dump(), "application/json");
+                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
                 return;
             }
             
@@ -1121,6 +1232,9 @@ then trigger a profile refresh to update the narrative.*
             
             res.set_content(fit_data.dump(), "application/json");
             
+        } catch (const FatalAiError& e) {
+            res.status = 500;
+            res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string("Fit-check failed: ") + e.what()}}.dump(), "application/json");
@@ -1310,6 +1424,25 @@ then trigger a profile refresh to update the narrative.*
 
     // ── ADMIN CONSOLE ENDPOINTS ────────────────────────────────────────────────
 
+    server.Delete("/api/admin/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            std::string fit_label = body.value("fit_label", "");
+            if (fit_label.empty())
+                throw std::runtime_error("Missing 'fit_label' field");
+            int deleted;
+            {
+                std::lock_guard<std::mutex> lock(db_write_mutex);
+                deleted = bulk_hard_delete_by_fit_label(db, fit_label);
+            }
+            std::cout << "[ADMIN] Hard-deleted " << deleted << " jobs with fit_label=" << fit_label << std::endl;
+            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+        }
+    });
+
     server.Delete("/api/admin/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[ADMIN] DELETE /api/admin/jobs/" << job_id << std::endl;
@@ -1403,7 +1536,7 @@ then trigger a profile refresh to update the narrative.*
 
             if (accumulated.empty()) {
                 res.status = 500;
-                res.set_content(json{{"error", "Empty response from AI"}}.dump(), "application/json");
+                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
                 return;
             }
 
@@ -1448,7 +1581,6 @@ then trigger a profile refresh to update the narrative.*
     }
     sqlite3_close(db);
     
-    // Cleanup curl globalization
     curl_global_cleanup();
     
     return 0;

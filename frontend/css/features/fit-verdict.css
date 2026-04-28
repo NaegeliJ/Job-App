@@ -437,15 +437,20 @@
 }
 
 .recheck-btn:hover {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--purple-dim);
+  border-color: var(--purple);
+  color: #fff;
 }
 
 .recheck-btn.running {
   cursor: not-allowed;
+  background: var(--purple-dim);
+  border-color: rgba(167, 139, 250, 0.45);
+  color: var(--purple);
   opacity: 0.7;
 }
+
+.recheck-btn.error { border-color: rgba(248, 113, 113, 0.45); color: var(--red); }
 
 .recheck-btn .spin {
   display: inline-block;

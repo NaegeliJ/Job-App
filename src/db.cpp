@@ -1,7 +1,3 @@
-//
-// Created by shops on 12/03/2026.
-//
-
 #include <stdexcept>
 #include <iostream>
 #include "../include/db.h"
@@ -20,7 +16,7 @@ namespace {
             sqlite3_bind_text(stmt, i + 1, params[i].c_str(), -1, SQLITE_TRANSIENT);
         }
 
-        if (sqlite3_step(stmt) != SQLITE_DONE ){
+        if (sqlite3_step(stmt) != SQLITE_DONE) {
             sqlite3_finalize(stmt);  // clean up before throwing
             throw std::runtime_error("exec_write failed: " + std::string(sqlite3_errmsg(db)));
         }
@@ -106,6 +102,31 @@ void insert_or_update_job(sqlite3 *db, const Job &job) {
     });
 }
 
+int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
+    exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE LOWER(fit_label) = LOWER(?)", {fit_label});
+    return sqlite3_changes(db);
+}
+
+int bulk_hard_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
+    exec_write(db, "DELETE FROM jobs WHERE LOWER(fit_label) = LOWER(?)", {fit_label});
+    return sqlite3_changes(db);
+}
+
+int restore_all_deleted(sqlite3* db) {
+    exec_write(db, "UPDATE jobs SET user_status = 'unseen' WHERE user_status = 'deleted'", {});
+    return sqlite3_changes(db);
+}
+
+int bulk_soft_delete_by_status(sqlite3* db, const std::string& status, int older_than_days) {
+    if (older_than_days > 0) {
+        const std::string sql = "UPDATE jobs SET user_status = 'deleted' WHERE user_status = ? AND scraped_at < date('now', '-' || ? || ' days')";
+        exec_write(db, sql, {status, std::to_string(older_than_days)});
+    } else {
+        exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE user_status = ?", {status});
+    }
+    return sqlite3_changes(db);
+}
+
 void delete_expired_jobs(sqlite3* db) {
     exec_write(db, R"(
         DELETE FROM jobs
@@ -114,10 +135,8 @@ void delete_expired_jobs(sqlite3* db) {
 }
 
 void db_init(sqlite3 *db) {
-    // Enable parallel read and write
     sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
 
-    // Create db if it doesnt exist
     char* errMsg = nullptr;
     int rc = sqlite3_exec(db, R"(
         CREATE TABLE IF NOT EXISTS jobs (
@@ -296,7 +315,7 @@ std::vector<JobRecord> get_jobs_needing_fitcheck_v2(sqlite3* db, int limit) {
                user_status, rating, notes, availability_status, detail_url,
                initial_publication_date, publication_end_date, template_text
         FROM jobs
-        WHERE fit_label IS NULL AND template_text IS NOT NULL
+        WHERE fit_label IS NULL AND template_text IS NOT NULL AND (user_status IS NULL OR user_status != 'deleted')
         ORDER BY initial_publication_date DESC
         LIMIT ?
     )";

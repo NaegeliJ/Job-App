@@ -1,8 +1,9 @@
 import state from '../state.js';
-import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
+import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, FITCHECK_PROGRESS_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
 import { renderDetail } from './detail.js';
 import { renderList } from './job-list.js';
 import { updateStats, setConnectionStatus } from './header.js';
+import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
 // Helper Functions
@@ -117,33 +118,59 @@ export async function setRating(stars) {
   showToast(`${stars} star${plural}`);
 }
 
-export async function setExpired() {
+export function setExpired() {
   if (!state.currentJob) return;
-  
+
   const jobTitle = state.currentJob.title;
-  if (!confirm(`Delete "${jobTitle}" permanently?`)) return;
-  
-  try {
-    await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}`, {
-      method: 'DELETE'
-    });
-    
-    state.allJobs = state.allJobs.filter(j => j.job_id !== state.currentJob.job_id);
-    state.currentJob = null;
-    
-    document.getElementById('action-bar').style.display = 'none';
-    document.getElementById('detail-scroll').innerHTML = `
-      <div class="empty">
-        <div class="empty-i">⌖</div>
-        <div class="empty-t">Select a position</div>
-      </div>`;
-    
-    renderList();
-    updateStats();
-    showToast('Job deleted');
-  } catch (error) {
-    showToast('Delete failed', true);
+  showConfirm(`Delete "${jobTitle}"? It won't reappear on next scrape.`, async () => {
+    try {
+      await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}/soft-delete`, {
+        method: 'POST'
+      });
+
+      state.allJobs = state.allJobs.filter(j => j.job_id !== state.currentJob.job_id);
+      state.currentJob = null;
+
+      document.getElementById('action-bar').style.display = 'none';
+      document.getElementById('detail-scroll').innerHTML = `
+        <div class="empty">
+          <div class="empty-i">⌖</div>
+          <div class="empty-t">Select a position</div>
+        </div>`;
+
+      renderList();
+      updateStats();
+      showToast('Job deleted');
+    } catch (error) {
+      showToast('Delete failed', true);
+    }
+  });
+}
+
+async function bulkDelete(body) {
+  const res = await fetch('/api/jobs/bulk', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || 'Bulk delete failed');
   }
+  const data = await res.json();
+  state.allJobs = await fetch('/api/jobs').then(r => r.json());
+  renderList();
+  updateStats();
+  return data.deleted;
+}
+
+export async function bulkDeleteByStatus(status, olderThanDays = 0) {
+  const body = olderThanDays > 0 ? { status, older_than_days: olderThanDays } : { status };
+  return bulkDelete(body);
+}
+
+export async function bulkDeleteByFitLabel(fitLabel) {
+  return bulkDelete({ fit_label: fitLabel });
 }
 
 export async function saveNotes() {
@@ -180,35 +207,8 @@ export function unhoverStar() {
 }
 
 // ============================================================================
-// Background Jobs (Scrape, Fetch Details, Fit-Check)
+// Background Jobs
 // ============================================================================
-
-async function runBackgroundJob(options) {
-  const { buttonId, loadingText, originalText, apiUrl, apiMethod = 'POST', successMessage, sortBy = 'score' } = options;
-  
-  const button = setButtonLoading(buttonId, loadingText, originalText);
-  if (!button) return;
-  
-  try {
-    const response = await fetch(apiUrl, { method: apiMethod });
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'Request failed');
-    }
-
-    showToast(successMessage(data));
-    
-    setTimeout(async () => {
-      resetButton(button, originalText);
-      await refreshJobs(sortBy);
-    }, 2000);
-    
-  } catch (error) {
-    showToast(`${loadingText.replace('...', '')} failed: ${error.message}`, true);
-    resetButton(button, originalText);
-  }
-}
 
 export async function scrapeJobs() {
   const button = setButtonLoading('scrape-btn', 'Scraping...', '⊕ Scrape Jobs.ch');
@@ -242,14 +242,67 @@ export async function scrapeJobs() {
 }
 
 export async function triggerFitCheck() {
-  await runBackgroundJob({
-    buttonId: 'fitcheck-btn',
-    loadingText: 'Analyzing...',
-    originalText: '🤖 Fit-Check',
-    apiUrl: FITCHECK_URL,
-    successMessage: (data) => `Fit-check complete: ${data.checked} jobs, ${data.failed} failed`,
-    sortBy: 'fit'
-  });
+  const button = setButtonLoading('fitcheck-btn', 'Analyzing...', '🤖 Fit-Check');
+  if (!button) return;
+
+  button.classList.remove('error');
+  button.removeAttribute('title');
+  button.style.setProperty('--fitcheck-progress', 0);
+
+  const pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(FITCHECK_PROGRESS_URL);
+      const data = await res.json();
+      if (data.total > 0) {
+        const pct = Math.round((data.done / data.total) * 100);
+        button.style.setProperty('--fitcheck-progress', pct);
+      }
+    } catch (_) {}
+  }, 1000);
+
+  try {
+    const response = await fetch(FITCHECK_URL, { method: 'POST' });
+    const data = await response.json();
+
+    clearInterval(pollInterval);
+
+    if (!response.ok) {
+      const msg = data.error_code === 'rate_limit'      ? 'Rate limit reached — try again later' :
+                  data.error_code === 'no_credits'      ? 'API credits exhausted'                 :
+                  data.error_code === 'invalid_api_key' ? 'Invalid API key — check Settings'      :
+                  data.error_code === 'unreachable'     ? 'AI provider unreachable — is it running?' :
+                  data.error || 'Request failed';
+      throw new Error(msg);
+    }
+
+    button.style.setProperty('--fitcheck-progress', 100);
+
+    if (data.checked === 0 && data.failed > 0) {
+      const msg = 'All jobs failed — check API key or provider status';
+      showToast(`Fit-check failed: ${msg}`, true);
+      resetButton(button, '⚠ Fit-Check');
+      button.style.removeProperty('--fitcheck-progress');
+      button.classList.add('error');
+      button.title = msg;
+      await refreshJobs('fit');
+      return;
+    }
+
+    showToast(`Fit-check complete: ${data.checked} jobs, ${data.failed} failed`);
+    setTimeout(async () => {
+      resetButton(button, '🤖 Fit-Check');
+      button.style.removeProperty('--fitcheck-progress');
+      await refreshJobs('fit');
+    }, 2000);
+
+  } catch (error) {
+    clearInterval(pollInterval);
+    showToast(`Fit-check failed: ${error.message}`, true);
+    resetButton(button, '⚠ Fit-Check');
+    button.style.removeProperty('--fitcheck-progress');
+    button.classList.add('error');
+    button.title = error.message;
+  }
 }
 
 // ============================================================================

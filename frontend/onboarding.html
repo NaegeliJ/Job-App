@@ -171,6 +171,43 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    .cv-drop-zone {
+      border: 2px dashed var(--border2);
+      border-radius: 8px;
+      padding: 28px 16px;
+      text-align: center;
+      margin-bottom: 12px;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+      cursor: pointer;
+      color: var(--text3);
+      font-size: 14px;
+      user-select: none;
+    }
+    .cv-drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(96,165,250,0.06);
+      color: var(--accent);
+    }
+    .cv-drop-zone.has-file {
+      border-color: var(--green, #4ade80);
+      color: var(--green, #4ade80);
+    }
+    .cv-drop-zone label {
+      color: var(--accent);
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    #cv-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
   </style>
 </head>
 <body>
@@ -227,6 +264,10 @@
       <div class="question-counter" id="question-counter">Question 1 of 10</div>
       <h1 class="question-title" id="question-title">Loading...</h1>
       <p class="question-subtitle" id="question-subtitle"></p>
+      <div id="cv-drop-zone" class="cv-drop-zone" style="display:none">
+        <input type="file" id="cv-file-input" accept=".pdf" style="display:none">
+        <div id="cv-drop-text">Drop PDF here or <label for="cv-file-input">browse</label></div>
+      </div>
       <textarea id="answer-input" placeholder="Type your answer here..."></textarea>
       <div class="button-row">
         <button class="btn-secondary" id="prev-btn" style="display:none">Previous</button>
@@ -248,7 +289,14 @@
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
+    // PDF.js worker
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
     const PROVIDERS = {
       ollama_local: { endpoint: 'http://localhost:11434/api/chat',                      models: ['llama3.2:latest', 'llama3.2:3b', 'llama3.1:8b'],                                            needsKey: false },
       ollama_cloud: { endpoint: 'https://ollama.com/v1/chat/completions',               models: ['gemma4:31b-cloud', 'deepseek-v4-flash'],                                                      needsKey: true  },
@@ -377,7 +425,70 @@
       document.getElementById('prev-btn').style.display = index > 0 ? 'block' : 'none';
       document.getElementById('next-btn').textContent = index === questions.length - 1 ? 'Complete' : 'Next';
       document.getElementById('progress-fill').style.width = `${((index + 1) / questions.length) * 100}%`;
+      document.getElementById('cv-drop-zone').style.display = index === 0 ? 'block' : 'none';
     }
+
+    // --- PDF drop zone logic ---
+    async function extractPdfText(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        text += content.items.map(item => item.str).join(' ') + '\n';
+      }
+      return text.trim();
+    }
+
+    function setDropZoneState(state, label) {
+      const zone = document.getElementById('cv-drop-zone');
+      zone.classList.remove('drag-over', 'has-file');
+      if (state) zone.classList.add(state);
+      document.getElementById('cv-drop-text').innerHTML = label;
+    }
+
+    async function handlePdfFile(file) {
+      if (!file || file.type !== 'application/pdf') {
+        setDropZoneState(null, 'Drop PDF here or <label for="cv-file-input">browse</label>');
+        alert('Only PDF files are supported.');
+        return;
+      }
+      setDropZoneState(null, '<span id="cv-spinner"></span>Extracting text...');
+      try {
+        const text = await extractPdfText(file);
+        document.getElementById('answer-input').value = text;
+        setDropZoneState('has-file', `✓ ${file.name} — text extracted. Edit below if needed.`);
+      } catch (e) {
+        setDropZoneState(null, 'Drop PDF here or <label for="cv-file-input">browse</label>');
+        alert('PDF extraction failed: ' + e.message);
+      }
+    }
+
+    (function initDropZone() {
+      const zone = document.getElementById('cv-drop-zone');
+      const fileInput = document.getElementById('cv-file-input');
+
+      zone.addEventListener('dragover', e => {
+        e.preventDefault();
+        zone.classList.add('drag-over');
+      });
+      zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        const file = e.dataTransfer.files[0];
+        handlePdfFile(file);
+      });
+      zone.addEventListener('click', e => {
+        if (e.target.tagName !== 'LABEL') fileInput.click();
+      });
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files[0]) handlePdfFile(fileInput.files[0]);
+        fileInput.value = '';
+      });
+    })();
+    // --- end PDF drop zone logic ---
 
     async function nextQuestion() {
       const answer = document.getElementById('answer-input').value.trim();
