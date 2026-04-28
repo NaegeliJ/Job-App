@@ -82,5 +82,15 @@
 .rescore-btn:hover, .rescore-btn.running { border-color: rgba(251, 191, 36, 0.45); color: var(--yellow); background: var(--yellow-dim); }
 .scrape-btn:hover  { border-color: var(--green); }
 .scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: var(--green-dim); }
+.fitcheck-btn { position: relative; overflow: hidden; }
 .fitcheck-btn:hover  { border-color: var(--purple); }
-.fitcheck-btn.running { border-color: rgba(96, 165, 250, 0.45); color: var(--accent); background: var(--accent-dim); }
+.fitcheck-btn.running { border-color: rgba(167, 139, 250, 0.45); color: var(--purple); background: transparent; }
+.fitcheck-btn.running::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: calc(var(--fitcheck-progress, 0) * 1%);
+  background: var(--purple-dim);
+  transition: width 0.8s ease;
+  pointer-events: none;
+}

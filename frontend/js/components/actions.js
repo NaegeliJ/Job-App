@@ -1,5 +1,5 @@
 import state from '../state.js';
-import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
+import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, FITCHECK_PROGRESS_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
 import { renderDetail } from './detail.js';
 import { renderList } from './job-list.js';
 import { updateStats, setConnectionStatus } from './header.js';
@@ -269,14 +269,45 @@ export async function scrapeJobs() {
 }
 
 export async function triggerFitCheck() {
-  await runBackgroundJob({
-    buttonId: 'fitcheck-btn',
-    loadingText: 'Analyzing...',
-    originalText: '🤖 Fit-Check',
-    apiUrl: FITCHECK_URL,
-    successMessage: (data) => `Fit-check complete: ${data.checked} jobs, ${data.failed} failed`,
-    sortBy: 'fit'
-  });
+  const button = setButtonLoading('fitcheck-btn', 'Analyzing...', '🤖 Fit-Check');
+  if (!button) return;
+
+  button.style.setProperty('--fitcheck-progress', 0);
+
+  const pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(FITCHECK_PROGRESS_URL);
+      const data = await res.json();
+      if (data.total > 0) {
+        const pct = Math.round((data.done / data.total) * 100);
+        button.style.setProperty('--fitcheck-progress', pct);
+      }
+    } catch (_) {}
+  }, 1000);
+
+  try {
+    const response = await fetch(FITCHECK_URL, { method: 'POST' });
+    const data = await response.json();
+
+    clearInterval(pollInterval);
+
+    if (!response.ok) throw new Error(data.error || 'Request failed');
+
+    button.style.setProperty('--fitcheck-progress', 100);
+    showToast(`Fit-check complete: ${data.checked} jobs, ${data.failed} failed`);
+
+    setTimeout(async () => {
+      resetButton(button, '🤖 Fit-Check');
+      button.style.removeProperty('--fitcheck-progress');
+      await refreshJobs('fit');
+    }, 2000);
+
+  } catch (error) {
+    clearInterval(pollInterval);
+    showToast(`Fit-check failed: ${error.message}`, true);
+    resetButton(button, '🤖 Fit-Check');
+    button.style.removeProperty('--fitcheck-progress');
+  }
 }
 
 // ============================================================================

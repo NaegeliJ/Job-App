@@ -6,6 +6,7 @@
 #include <chrono>
 #include <thread>
 #include <random>
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
 #include <filesystem>
@@ -408,6 +409,13 @@ int main() {
     std::mutex db_write_mutex;
 
     std::mutex api_key_mutex;
+
+    struct FitcheckProgress {
+        std::atomic<bool> running{false};
+        std::atomic<int>  done{0};
+        std::atomic<int>  total{0};
+        std::atomic<int>  failed{0};
+    } fitcheck_progress;
 
     ConfigV2 config_v2;
     std::shared_mutex config_v2_mutex;
@@ -1022,7 +1030,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
         
@@ -1054,6 +1062,11 @@ then trigger a profile refresh to update the narrative.*
 
         std::cout << "[INFO] Starting fit-check for " << jobs.size() << " jobs" << std::endl;
 
+        fitcheck_progress.done    = 0;
+        fitcheck_progress.failed  = 0;
+        fitcheck_progress.total   = static_cast<int>(jobs.size());
+        fitcheck_progress.running = true;
+
         int checked = 0, failed = 0;
         for (auto& job : jobs) {
             try {
@@ -1084,15 +1097,28 @@ then trigger a profile refresh to update the narrative.*
                                        "md_file_profile");
                 }
                 checked++;
-                std::cout << "[INFO] Fit-checked: " << job.job_id << std::endl;
+                fitcheck_progress.done++;
+                std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
 
             } catch (const std::exception& e) {
                 std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
                 failed++;
+                fitcheck_progress.failed++;
+                fitcheck_progress.done++;
             }
         }
 
+        fitcheck_progress.running = false;
         res.set_content(json{{"ok", true}, {"checked", checked}, {"failed", failed}}.dump(), "application/json");
+    });
+
+    server.Get("/api/fitcheck/progress", [&fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{
+            {"running", fitcheck_progress.running.load()},
+            {"done",    fitcheck_progress.done.load()},
+            {"total",   fitcheck_progress.total.load()},
+            {"failed",  fitcheck_progress.failed.load()}
+        }.dump(), "application/json");
     });
 
     // POST /api/jobs/:id/fitcheck — Re-check fit for a single job
