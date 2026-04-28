@@ -193,9 +193,10 @@ function setupRecheckButton() {
       const data = await response.json();
 
       if (!response.ok) {
-        const msg = data.error_code === 'rate_limit'      ? 'Rate limit reached — try again later' :
-                    data.error_code === 'no_credits'      ? 'API credits exhausted'                 :
-                    data.error_code === 'invalid_api_key' ? 'Invalid API key — check Settings'      :
+        const msg = data.error_code === 'rate_limit'      ? 'Rate limit reached — try again later'      :
+                    data.error_code === 'no_credits'      ? 'API credits exhausted'                      :
+                    data.error_code === 'invalid_api_key' ? 'Invalid API key — check Settings'           :
+                    data.error_code === 'unreachable'     ? 'AI provider unreachable — is it running?'   :
                     data.error || 'Fit-check failed';
         throw new Error(msg);
       }

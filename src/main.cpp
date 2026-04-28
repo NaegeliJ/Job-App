@@ -189,6 +189,8 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
     }
     // Check fatal status codes first — before body inspection, since some
     // providers use non-standard body formats (e.g. "detail" instead of "error").
+    if (http_status == 0)
+        throw FatalAiError("unreachable", "AI endpoint unreachable — check provider is running (" + url + ")");
     if (http_status == 401 || http_status == 403)
         throw FatalAiError("invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")");
     if (http_status == 402)
