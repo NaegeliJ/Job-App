@@ -439,7 +439,7 @@
 .recheck-btn:hover {
   background: var(--purple-dim);
   border-color: var(--purple);
-  color: var(--purple);
+  color: #fff;
 }
 
 .recheck-btn.running {
