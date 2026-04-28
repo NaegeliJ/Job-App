@@ -140,9 +140,11 @@ header {
 .tool-btn:hover {
   color:var(--text);
   border-color:var(--accent);
-  background:var(--accent-glow);
 }
 .tool-btn.running { color:var(--text3); cursor:wait; }
+#scrape-btn:hover     { border-color:var(--green); }
+#import-job-btn:hover { border-color:var(--yellow); }
+#fitcheck-btn:hover   { border-color:var(--purple); }
 
 .bulk-delete-menu {
   display:none;

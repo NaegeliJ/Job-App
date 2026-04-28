@@ -80,4 +80,7 @@
 
 /* Tool button variants */
 .rescore-btn:hover, .rescore-btn.running { border-color: rgba(251, 191, 36, 0.45); color: var(--yellow); background: var(--yellow-dim); }
-.scrape-btn:hover, .scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: var(--green-dim); }.fitcheck-btn:hover, .fitcheck-btn.running { border-color: rgba(96, 165, 250, 0.45); color: var(--accent); background: var(--accent-dim); }
+.scrape-btn:hover  { border-color: var(--green); }
+.scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: var(--green-dim); }
+.fitcheck-btn:hover  { border-color: var(--purple); }
+.fitcheck-btn.running { border-color: rgba(96, 165, 250, 0.45); color: var(--accent); background: var(--accent-dim); }
