@@ -32,6 +32,29 @@ private:
     std::string error_code_;
 };
 
+// Returns {error_code, message} for fatal AI errors, or {"",""} for per-job errors.
+static std::pair<std::string,std::string> classifyAiError(long http_status, const std::string& body) {
+    if (http_status == 429) return {"rate_limit",      "Rate limit reached (HTTP 429)"};
+    if (http_status == 402) return {"no_credits",      "Insufficient API credits (HTTP 402)"};
+    if (http_status == 401 || http_status == 403)
+        return {"invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")"};
+
+    if ((http_status == 400 || http_status == 0) && !body.empty()) {
+        std::string lower = body;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        for (const auto& kw : {"invalid_api_key", "invalid api key", "incorrect api key",
+                                "authentication_error", "authentication failed", "unauthorized"}) {
+            if (lower.find(kw) != std::string::npos)
+                return {"invalid_api_key", "Invalid API key (HTTP " + std::to_string(http_status) + ")"};
+        }
+        if (lower.find("credit") != std::string::npos || lower.find("billing") != std::string::npos)
+            return {"no_credits", "Insufficient API credits (HTTP " + std::to_string(http_status) + ")"};
+        if (lower.find("rate limit") != std::string::npos || lower.find("too many requests") != std::string::npos)
+            return {"rate_limit", "Rate limit reached (HTTP " + std::to_string(http_status) + ")"};
+    }
+    return {"", ""};
+}
+
 struct AiSnapshot {
     std::string provider, model, endpoint;
     int max_tokens, top_k;
@@ -165,12 +188,11 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
             std::cerr << "[DEBUG] httpPostAI retry response (first 300): " << response.substr(0, 300) << std::endl;
     }
     if (response.empty() || hasTopLevelError(response)) {
-        if (http_status == 401) throw FatalAiError("invalid_api_key", "Invalid API key (HTTP 401)");
-        if (http_status == 402) throw FatalAiError("no_credits",      "Insufficient API credits (HTTP 402)");
-        if (http_status == 429) throw FatalAiError("rate_limit",      "Rate limit reached (HTTP 429)");
-        std::string err_msg = "HTTP " + std::to_string(http_status) + " from " + url;
-        if (!response.empty()) err_msg += ": " + response.substr(0, 500);
-        throw std::runtime_error(err_msg);
+        auto [err_code, err_msg] = classifyAiError(http_status, response);
+        if (!err_code.empty()) throw FatalAiError(err_code, err_msg);
+        std::string msg = "HTTP " + std::to_string(http_status) + " from " + url;
+        if (!response.empty()) msg += ": " + response.substr(0, 500);
+        throw std::runtime_error(msg);
     }
     return response;
 }
@@ -1230,6 +1252,9 @@ then trigger a profile refresh to update the narrative.*
             
             res.set_content(fit_data.dump(), "application/json");
             
+        } catch (const FatalAiError& e) {
+            res.status = 500;
+            res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string("Fit-check failed: ") + e.what()}}.dump(), "application/json");

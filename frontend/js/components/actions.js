@@ -302,8 +302,19 @@ export async function triggerFitCheck() {
     }
 
     button.style.setProperty('--fitcheck-progress', 100);
-    showToast(`Fit-check complete: ${data.checked} jobs, ${data.failed} failed`);
 
+    if (data.checked === 0 && data.failed > 0) {
+      const msg = 'All jobs failed — check API key or provider status';
+      showToast(`Fit-check failed: ${msg}`, true);
+      resetButton(button, '⚠ Fit-Check');
+      button.style.removeProperty('--fitcheck-progress');
+      button.classList.add('error');
+      button.title = msg;
+      await refreshJobs('fit');
+      return;
+    }
+
+    showToast(`Fit-check complete: ${data.checked} jobs, ${data.failed} failed`);
     setTimeout(async () => {
       resetButton(button, '🤖 Fit-Check');
       button.style.removeProperty('--fitcheck-progress');
