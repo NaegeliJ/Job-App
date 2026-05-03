@@ -57,13 +57,23 @@ cmake --build cmake-build-debug
 
 # Clean build
 rm -rf cmake-build-debug && mkdir cmake-build-debug
-cd cmake-build-debug && cmake .. && cd ..
+cd cmake-build-debug && cmake .. -DAPP_VERSION=$(git rev-parse --short HEAD) && cd ..
 cmake --build cmake-build-debug
 
 # Run
 ./cmake-build-debug/Job_App
 # Access at http://localhost:8080
 ```
+
+`APP_VERSION` is a CMake variable passed at configure time. Omit `-DAPP_VERSION=...` and it defaults to `"unknown"` — fine for local dev. The `/api/version` endpoint exposes it to the frontend.
+
+### Docker
+
+```bash
+docker build --build-arg VERSION=$(git rev-parse --short HEAD) .
+```
+
+Without `--build-arg`, the image shows `vunknown`.
 
 ### Build Dependencies
 
@@ -107,8 +117,8 @@ AI provider/key are read from `config_v2.json` (`fitcheck.provider`, `fitcheck.e
 
 - `buildFitcheckPrompt` lambda substitutes `{{profile}}` / `{{jobText}}` in `config/system_prompt.txt`, loaded once at startup. Missing file or missing placeholders = hard error, server won't start.
 - Captured by all 3 fitcheck endpoints: `POST /api/fitcheck` (batch), `POST /api/jobs/:id/fitcheck` (single), `POST /api/admin/fitcheck/recheck/:id` (admin recheck).
-- `httpPostAI` has a **600 s timeout** and auto-retries once on empty response or 5xx error (handles Ollama Cloud cold-start).
-- **`FatalAiError`** (C++ exception): thrown by `httpPostAI` for unrecoverable conditions — HTTP 0 (unreachable), 401 (invalid key), 402 (no credits), 429 (rate limit), or a top-level `error.code` in the JSON body. The batch fitcheck loop catches `FatalAiError` and aborts immediately rather than spamming the endpoint. Single-job fitcheck also propagates it.
+- `httpPostAI` has a **600 s timeout** and up to **3 attempts**: retry after 5 s on empty response or 5xx; retry again after 15 s if still `status == 0` (handles Ollama Cloud cold-start and transient drops).
+- **`FatalAiError`** (C++ exception): thrown by `httpPostAI` for unrecoverable conditions — HTTP 0 (unreachable), 401 (invalid key), 402 (no credits), 429 (rate limit), or a top-level `error.code` in the JSON body. The batch fitcheck loop treats `invalid_api_key` and `no_credits` as batch-fatal (abort immediately); `unreachable` and `rate_limit` are treated as per-job failures so the batch continues. Single-job fitcheck propagates all `FatalAiError`s.
 - Frontend: during batch, `actions.js` polls `FITCHECK_PROGRESS_URL` every 1 s and updates `--fitcheck-progress` CSS variable on the Fit-Check button (drives a `::before` fill). On `FatalAiError` the button shows `⚠ Fit-Check` with a red border and a tooltip; clears on next click.
 - `parseStreamingResponse` handles two formats: Ollama native NDJSON and OpenAI-compatible SSE.
 - `buildAiRequest(provider, model, prompt, ...)` builds the JSON request body. Provider-specific behavior:
@@ -154,4 +164,4 @@ AI provider/key are read from `config_v2.json` (`fitcheck.provider`, `fitcheck.e
 
 ---
 
-*Last updated: 2026-04-28 (fitcheck progress bar + progress endpoint; FatalAiError batch abort; custom confirm modal; api.js consolidated CONFIG_URL/FITCHECK_PROGRESS_URL/VERSION_URL)*
+*Last updated: 2026-05-03 (APP_VERSION via cmake -D / Docker --build-arg; FatalAiError batch resilience — transient errors skip job instead of aborting batch)*

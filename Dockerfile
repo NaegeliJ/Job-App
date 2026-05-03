@@ -1,8 +1,9 @@
 FROM debian:bookworm-slim AS builder
 RUN apt-get update && apt-get install -y cmake make g++ libcurl4-openssl-dev && rm -rf /var/lib/apt/lists/*
+ARG VERSION=unknown
 WORKDIR /src
 COPY . .
-RUN cmake -B build && cmake --build build --parallel
+RUN cmake -B build -DAPP_VERSION=${VERSION} && cmake --build build --parallel
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y libcurl4 && rm -rf /var/lib/apt/lists/*
