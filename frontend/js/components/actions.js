@@ -257,6 +257,7 @@ export async function triggerFitCheck() {
         const pct = Math.round((data.done / data.total) * 100);
         button.style.setProperty('--fitcheck-progress', pct);
       }
+      if (!data.running) clearInterval(pollInterval);
     } catch (_) {}
   }, 1000);
 
@@ -293,7 +294,7 @@ export async function triggerFitCheck() {
       resetButton(button, '🤖 Fit-Check');
       button.style.removeProperty('--fitcheck-progress');
       await refreshJobs('fit');
-    }, 2000);
+    }, 900);
 
   } catch (error) {
     clearInterval(pollInterval);
