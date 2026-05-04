@@ -172,6 +172,10 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
         std::this_thread::sleep_for(std::chrono::seconds(5));
         response = httpRequest(url, "POST", headers, body, 600L, &http_status);
     }
+    if (http_status == 0) {
+        std::this_thread::sleep_for(std::chrono::seconds(15));
+        response = httpRequest(url, "POST", headers, body, 600L, &http_status);
+    }
     // Check fatal status codes first — before body inspection, since some
     // providers use non-standard body formats (e.g. "detail" instead of "error").
     if (http_status == 0)
@@ -1117,8 +1121,13 @@ then trigger a profile refresh to update the narrative.*
                     fitcheck_progress.done++;
                     std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
 
-                } catch (const FatalAiError&) {
-                    throw;
+                } catch (const FatalAiError& e) {
+                    if (e.code() == "invalid_api_key" || e.code() == "no_credits")
+                        throw;
+                    std::cerr << "[WARN] Transient AI error for " << job.job_id << ": " << e.what() << std::endl;
+                    failed++;
+                    fitcheck_progress.failed++;
+                    fitcheck_progress.done++;
                 } catch (const std::exception& e) {
                     std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
                     failed++;
