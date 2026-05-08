@@ -1,18 +1,26 @@
 #!/bin/bash
 set -e
-
+BRANCH=${1:-master}
 cd ~/Job-App
 
-echo "Downloading latest version..."
-curl -fsSL https://github.com/Meisdy/Job-App/archive/refs/heads/master.zip -o _update.zip
+echo "Downloading $BRANCH..."
+curl -fsSL "https://github.com/Meisdy/Job-App/archive/refs/heads/$BRANCH.zip" -o _update.zip
 unzip -q -o _update.zip
-sed -i 's/\r//' Job-App-master/update.sh Job-App-master/setup.sh
-cp -r Job-App-master/src Job-App-master/include Job-App-master/frontend Job-App-master/Dockerfile \
-      Job-App-master/docker-compose.yml Job-App-master/CMakeLists.txt .
-rm -rf Job-App-master _update.zip
+DIR="Job-App-$BRANCH"
+cp -r "$DIR/src" "$DIR/include" "$DIR/frontend" "$DIR/Dockerfile" \
+      "$DIR/docker-compose.yml" "$DIR/CMakeLists.txt" \
+      "$DIR/update.sh" "$DIR/update_dev.sh" "$DIR/setup.sh" .
+rm -rf "$DIR" _update.zip
+chmod +x update.sh update_dev.sh setup.sh
 
-echo "Rebuilding container (takes ~2 min)..."
-docker compose up --build -d
+if [ "$BRANCH" = "master" ]; then
+  echo "Pulling latest image..."
+  docker compose pull
+  docker compose up -d
+else
+  echo "Rebuilding container (takes ~2 min)..."
+  docker compose up --build -d
+fi
 
 echo ""
-echo "Done. Open http://localhost:8080"
+echo "Done. http://localhost:8080"

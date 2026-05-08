@@ -1,5 +1,5 @@
 import state from './state.js';
-import { GET_URL, PROFILE_GET_URL } from './api.js';
+import { GET_URL, PROFILE_GET_URL, VERSION_URL } from './api.js';
 import { setConnectionStatus, updateStats, onSearch, clearSearch, setFilter, toggleSort, initBulkDeleteDropdown } from './components/header.js';
 import { renderList, selectJob } from './components/job-list.js';
 import { closeSettings, openSettings, saveSettings } from './components/modal.js';
@@ -171,9 +171,29 @@ document.addEventListener('keydown', e => {
   }
 });
 
+async function checkForUpdate() {
+  try {
+    const [ver, release] = await Promise.all([
+      fetch(VERSION_URL).then(r => r.json()),
+      fetch('https://api.github.com/repos/Meisdy/Job-App/releases/latest').then(r => r.json())
+    ]);
+    const current = ver.version;
+    const latest = release.tag_name;
+    if (!latest || !current || !/^v?\d+\.\d+/.test(current)) return;
+    if (current !== latest && `v${current}` !== latest) {
+      const notice = document.getElementById('update-notice');
+      if (notice) {
+        notice.textContent = `↑ ${latest} available`;
+        notice.style.display = '';
+      }
+    }
+  } catch {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   init();
   initConsole();
+  checkForUpdate();
 });
 
 export { init, bindEvents };

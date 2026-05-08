@@ -24,10 +24,11 @@ cat > config/api_keys.json << 'EOF'
 EOF
 
 mkdir -p data
-chmod +x update.sh
+chmod +x update.sh update_dev.sh
 
-echo "Building and starting (takes ~2 min first time)..."
-docker compose up --build -d
+echo "Starting Job-App..."
+docker compose pull
+docker compose up -d
 
 echo ""
 echo "Done. Open http://localhost:8080 and complete onboarding."

@@ -1,6 +1,7 @@
 services:
   job-app:
     container_name: job-app
+    image: ghcr.io/meisdy/job-app:latest
     build: .
     network_mode: host
     volumes:

@@ -41,13 +41,20 @@ export async function openSettings() {
     body.innerHTML = renderErrorState('Failed to load config');
   }
 
-  fetch(VERSION_URL)
-    .then(r => r.json())
-    .then(ver => {
-      const verEl = document.getElementById('app-version');
-      if (verEl) verEl.textContent = `v${ver.version}`;
-    })
-    .catch(() => {});
+  Promise.all([
+    fetch(VERSION_URL).then(r => r.json()),
+    fetch('https://api.github.com/repos/Meisdy/Job-App/releases/latest').then(r => r.json()).catch(() => null)
+  ]).then(([ver, release]) => {
+    const verEl = document.getElementById('app-version');
+    if (!verEl) return;
+    const current = ver.version;
+    verEl.textContent = `v${current}`;
+    if (!release) return;
+    const latest = release.tag_name;
+    if (latest && current !== latest && `v${current}` !== latest) {
+      verEl.textContent += ` · ${latest} available — run update.sh`;
+    }
+  }).catch(() => {});
 }
 
 export function closeSettings() {
