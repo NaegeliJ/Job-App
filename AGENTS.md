@@ -13,8 +13,11 @@ Build, test, and code-style guidance for agentic coding in the Job-App repositor
 | `config/config_v2.json` | Active scrape & fitcheck config |
 | `config/system_prompt.txt` | LLM prompt template (`{{profile}}`, `{{jobText}}` placeholders) |
 | `config/api_keys.json` | API keys (gitignored) |
-| `setup.sh` | One-liner Docker setup (creates `api_keys.json` template) |
-| `Dockerfile` / `docker-compose.yml` | Multi-stage Debian build, mounts `./data` and `./config` |
+| `setup.sh` | One-liner Docker setup — pulls pre-built GHCR image, falls back to local build |
+| `update.sh` | Update script — `bash update.sh` pulls latest image; `bash update.sh dev` builds dev branch locally |
+| `update_dev.sh` | Thin wrapper: `bash ~/Job-App/update.sh dev` (deprecated, remove eventually) |
+| `Dockerfile` / `docker-compose.yml` | Multi-stage Debian build; compose declares `image: ghcr.io/meisdy/job-app:latest` and bootstraps `update.sh` on container start |
+| `.github/workflows/release.yml` | CI: triggers on `v*` tags — builds image, pushes to GHCR, creates GitHub Release |
 | `src/main.cpp` | Server, all API endpoints, config, HTTP helpers |
 | `src/db.cpp` | Database operations (SQLite) |
 | `frontend/index.html` | Main SPA |
@@ -27,7 +30,7 @@ Build, test, and code-style guidance for agentic coding in the Job-App repositor
 - **JS Modules**: ES6 modules, no bundler. `state.js` is the single source of truth.
 - **api.js exports**: `GET_URL`, `UPDATE_URL`, `SCRAPE_URL`, `DETAILS_URL`, `CONFIG_URL`, `PROFILE_GET_URL`, `PROFILE_SAVE_URL`, `FITCHECK_URL`, `FITCHECK_PROGRESS_URL`, `IMPORT_TEXT_URL`, `VERSION_URL`
 - **XSS**: All user/LLM data inserted into `innerHTML` must go through `escapeHtml()` from `formatting.js`
-- **Header Layout**: Logo, status dot, `.search-group` (absolutely centered), profile, settings (left → right). Profile has `margin-left: auto`. Header gap is 8px. No filter buttons in header.
+- **Header Layout**: Logo, status dot, `.search-group` (absolutely centered), profile, settings, `#update-notice` (left → right). Profile has `margin-left: auto`. Header gap is 8px. No filter buttons in header. `#update-notice` is hidden by default; shown by `checkForUpdate()` in `main.js` when GitHub releases API returns a newer version than `/api/version`.
 - **Filter Dropdown**: Lives in `.sb-header` between "Positions" label and `⇅ SCORE` sort button. `#filter-dropdown-btn` triggers `#filter-dropdown-menu` (`.open` class toggle). Open/close wired in `main.js` `bindEvents` (click trigger + document click-outside + Escape key).
 - **No inline onclick handlers:** All event wiring is in `main.js` `bindEvents()`. Elements have `id` attributes; handlers attach via `addEventListener`.
 - **Custom confirm modal**: `utils/confirm.js` exports `confirmDialog(message)` — returns a Promise\<boolean\>. Replaces all `window.confirm()` calls. Wire `#confirm-modal`, `#confirm-yes-btn`, `#confirm-no-btn` in `index.html`.
@@ -70,10 +73,22 @@ cmake --build cmake-build-debug
 ### Docker
 
 ```bash
-docker build --build-arg VERSION=$(git rev-parse --short HEAD) .
+# Dev: build locally
+docker compose up --build -d
+
+# Prod: pull pre-built image from GHCR
+docker compose pull && docker compose up -d
 ```
 
-Without `--build-arg`, the image shows `vunknown`.
+`APP_VERSION` is baked in by CI from the git tag (`v1.0.0`). Local builds default to `unknown`. The `/api/version` endpoint exposes it; the frontend compares it against the GitHub releases API to show an update notice.
+
+### Release flow
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+CI builds the image, pushes `ghcr.io/meisdy/job-app:latest` + `ghcr.io/meisdy/job-app:v1.0.0`, and creates a GitHub Release. Users see the update notice in the UI and run `bash update.sh` to pull the new image.
 
 ### Build Dependencies
 
@@ -164,4 +179,4 @@ AI provider/key are read from `config_v2.json` (`fitcheck.provider`, `fitcheck.e
 
 ---
 
-*Last updated: 2026-05-03 (APP_VERSION via cmake -D / Docker --build-arg; FatalAiError batch resilience — transient errors skip job instead of aborting batch)*
+*Last updated: 2026-05-08 (GHCR pre-built images via CI on tag; update.sh self-bootstrap via container command; frontend version check against GitHub releases API)*

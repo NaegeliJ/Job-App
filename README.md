@@ -16,6 +16,10 @@ Open **http://localhost:8080** and complete onboarding. Pick your AI provider, e
 
 **WSL users:** Docker does not auto-start on WSL boot. Start manually with `docker start job-app`, or add to `~/.bashrc`:
 
+```bash
+sudo service docker start > /dev/null 2>&1
+```
+
 ## How it works
 
 ```
@@ -78,7 +82,7 @@ cd ~/Job-App
 bash update.sh
 ```
 
-Downloads the latest version and rebuilds the container. Database and config survive.
+Pulls the latest pre-built image from GitHub Container Registry (~30 seconds). Database and config survive. The UI shows a notice when a newer version is available.
 
 ## Logs
 
