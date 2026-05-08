@@ -24,7 +24,7 @@ cat > config/api_keys.json << 'EOF'
 EOF
 
 mkdir -p data
-chmod +x update.sh update_dev.sh
+chmod +x update.sh
 
 echo "Starting Job-App..."
 docker compose pull 2>/dev/null && docker compose up -d || {
