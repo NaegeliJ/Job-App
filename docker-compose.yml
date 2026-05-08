@@ -7,4 +7,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./config:/app/config
+      - ./update.sh:/deploy/update.sh
     restart: unless-stopped
+    command: sh -c "[ -f /deploy/update.sh ] && cp /app/update.sh /deploy/update.sh; exec ./Job_App"
