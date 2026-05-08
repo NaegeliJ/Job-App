@@ -27,8 +27,10 @@ mkdir -p data
 chmod +x update.sh update_dev.sh
 
 echo "Starting Job-App..."
-docker compose pull
-docker compose up -d
+docker compose pull 2>/dev/null && docker compose up -d || {
+  echo "Image not available yet, building from source (~2 min)..."
+  docker compose up --build -d
+}
 
 echo ""
 echo "Done. Open http://localhost:8080 and complete onboarding."
