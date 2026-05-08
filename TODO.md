@@ -14,5 +14,3 @@
 - GitHub Actions: cross-compile and attach Windows exe + Linux bin to GitHub Releases on tag
 - Ship as ZIP: binary + `frontend/` + `config/` template + launcher script
 
-## Cleanup
-- Remove `update_dev.sh` — now just a wrapper for `bash update.sh dev`
