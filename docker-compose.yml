@@ -9,4 +9,4 @@ services:
       - ./config:/app/config
       - ./update.sh:/deploy/update.sh
     restart: unless-stopped
-    command: sh -c "[ -f /deploy/update.sh ] && cp /app/update.sh /deploy/update.sh; exec ./Job_App"
+    command: sh -c "curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/update.sh -o /deploy/update.sh 2>/dev/null || true; exec ./Job_App"

@@ -12,7 +12,6 @@ COPY --from=builder /src/build/Job_App .
 COPY frontend/ frontend/
 COPY config/system_prompt.txt config/system_prompt.txt
 COPY config/user_profile_template.md config/user_profile_template.md
-COPY update.sh /app/update.sh
 RUN mkdir -p data
 EXPOSE 8080
 CMD ["./Job_App"]
