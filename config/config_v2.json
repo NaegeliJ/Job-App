@@ -1,7 +1,7 @@
 {
   "fitcheck": {
     "endpoint": "https://ollama.com/v1/chat/completions",
-    "limit": 1,
+    "limit": 5,
     "max_tokens": 4000,
     "model": "gemma4:31b-cloud",
     "provider": "ollama_cloud",
@@ -11,7 +11,8 @@
   },
   "scrape": {
     "queries": [
-      "Robotics Engineer"
+      "Robotics Engineer",
+      "Embedded Software Engineer"
     ],
     "rows": 10
   }
