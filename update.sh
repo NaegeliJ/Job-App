@@ -9,9 +9,9 @@ unzip -q -o _update.zip
 DIR="Job-App-$BRANCH"
 cp -r "$DIR/src" "$DIR/include" "$DIR/frontend" "$DIR/Dockerfile" \
       "$DIR/docker-compose.yml" "$DIR/CMakeLists.txt" \
-      "$DIR/update.sh" "$DIR/update_dev.sh" "$DIR/setup.sh" .
+      "$DIR/update.sh" "$DIR/setup.sh" .
 rm -rf "$DIR" _update.zip
-chmod +x update.sh update_dev.sh setup.sh
+chmod +x update.sh setup.sh
 
 if [ "$BRANCH" = "master" ]; then
   echo "Pulling latest image..."
