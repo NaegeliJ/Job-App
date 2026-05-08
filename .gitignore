@@ -27,3 +27,7 @@ data/*.csv
 *.db-shm
 *.db-wal
 .claude/
+
+# Dev-only docs
+AGENTS.md
+TODO.md
