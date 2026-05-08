@@ -11,20 +11,22 @@ if ! command -v docker &> /dev/null; then
   exec sg docker "$0"
 fi
 
-curl -fsSL https://github.com/Meisdy/Job-App/archive/refs/heads/master.zip -o Job-App.zip
-unzip -q Job-App.zip
-mv Job-App-master Job-App
-rm Job-App.zip
-cd Job-App
+RAW="https://raw.githubusercontent.com/Meisdy/Job-App/master"
+mkdir -p ~/Job-App/config ~/Job-App/data
+cd ~/Job-App
+
+curl -fsSL "$RAW/docker-compose.yml" -o docker-compose.yml
+curl -fsSL "$RAW/update.sh"          -o update.sh
+curl -fsSL "$RAW/config/config_v2.json"           -o config/config_v2.json
+curl -fsSL "$RAW/config/system_prompt.txt"        -o config/system_prompt.txt
+curl -fsSL "$RAW/config/user_profile_template.md" -o config/user_profile_template.md
+chmod +x update.sh
 
 cat > config/api_keys.json << 'EOF'
 {
   "api_key": "YOUR_API_KEY_HERE"
 }
 EOF
-
-mkdir -p data
-chmod +x update.sh
 
 echo "Starting Job-App..."
 docker compose pull 2>/dev/null && docker compose up -d || {
