@@ -6,7 +6,7 @@ COPY . .
 RUN cmake -B build -DAPP_VERSION=${VERSION} && cmake --build build --parallel
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y libcurl4 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libcurl4 curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /src/build/Job_App .
 COPY frontend/ frontend/
