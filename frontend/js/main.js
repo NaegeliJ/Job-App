@@ -180,7 +180,7 @@ async function checkForUpdate() {
     const current = ver.version;
     const latest = release.tag_name;
     if (!latest || !current || !/^v?\d+\.\d+/.test(current)) return;
-    if (current !== latest && `v${current}` !== latest) {
+    if (current !== latest && current !== latest.replace(/^v/, '')) {
       const notice = document.getElementById('update-notice');
       if (notice) {
         notice.textContent = `↑ ${latest} available`;
