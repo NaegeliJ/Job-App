@@ -8,7 +8,11 @@ fi
 if ! command -v docker &> /dev/null; then
   curl -fsSL https://get.docker.com | sudo sh
   sudo usermod -aG docker "$USER"
-  exec sg docker "$0"
+fi
+
+if ! docker info &> /dev/null; then
+  echo "Docker installed. Log out and back in, then re-run setup.sh"
+  exit 0
 fi
 
 RAW="https://raw.githubusercontent.com/Meisdy/Job-App/master"

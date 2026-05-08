@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 BRANCH=${1:-master}
-cd ~/Job-App
+cd "$(dirname "$(realpath "$0")")"
 
 echo "Downloading $BRANCH..."
 curl -fsSL "https://github.com/Meisdy/Job-App/archive/refs/heads/$BRANCH.zip" -o _update.zip
