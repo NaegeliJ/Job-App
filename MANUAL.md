@@ -35,7 +35,7 @@ This system uses LLMs, which needs proper instructions and thus, some tuning.
 |--------|--------------|
 | **Scrape** | Fetches new listings from jobs.ch per your queries, then auto-fetches full posting text |
 | **Fit-Check** | Scores every unscored job via LLM. Progress bar fills left→right. Fatal errors (bad key, no credits, rate limit) stop the batch and turn the button red — fix in Settings, then retry |
-| **Import** | Paste any job posting text. App extracts fields and fit-checks automatically |
+| **Add Job manually** | Paste any job posting text. App extracts fields and fit-checks automatically |
 | **⊞ Filter** | Filter list by fit label or status: All / Strong / Decent / Exp / Weak / New / Starred / Applied |
 | **⇅ Score** | Toggle sort: fit score (default) ↔ date scraped |
 | **🗑 Cleanup** | Bulk soft-delete: all Skipped, all No Go, or unseen jobs older than 30 days |
