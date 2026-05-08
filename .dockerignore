@@ -2,11 +2,18 @@ cmake-build-debug/
 cmake-build-rework/
 build/
 .git/
+.github/
 .idea/
+.claude/
+
+# User data — never bake into image
 data/
 config/api_keys.json
 config/user_profile.md
-AGENTS.md
-CODE_REVIEW.md
-TODO.md
-update_dev.sh
+
+# Not needed for build
+/*.md
+/*.sh
+docker-compose.yml
+.gitignore
+.gitattributes
