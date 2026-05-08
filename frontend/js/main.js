@@ -183,7 +183,7 @@ async function checkForUpdate() {
     if (current !== latest && current !== latest.replace(/^v/, '')) {
       const notice = document.getElementById('update-notice');
       if (notice) {
-        notice.textContent = `↑ ${latest} available`;
+        notice.textContent = `↑ ${latest} — run: bash update.sh`;
         notice.style.display = '';
       }
     }
