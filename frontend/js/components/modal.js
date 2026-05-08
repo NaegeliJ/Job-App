@@ -48,10 +48,10 @@ export async function openSettings() {
     const verEl = document.getElementById('app-version');
     if (!verEl) return;
     const current = ver.version;
-    verEl.textContent = `v${current}`;
+    verEl.textContent = current.startsWith('v') ? current : `v${current}`;
     if (!release) return;
     const latest = release.tag_name;
-    if (latest && current !== latest && `v${current}` !== latest) {
+    if (latest && current !== latest && current !== latest.replace(/^v/, '')) {
       verEl.textContent += ` · ${latest} available — run update.sh`;
     }
   }).catch(() => {});
