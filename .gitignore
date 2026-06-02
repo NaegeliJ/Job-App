@@ -28,3 +28,7 @@ data/*.csv
 *.db-wal
 .claude/
 /scripts/linkedin_probe.py
+
+# Dev-only docs
+AGENTS.md
+TODO.md
