@@ -87,12 +87,15 @@ function buildJobItemHtml(job) {
       class="job-item${isActive ? ' active' : ''} status-${status}"
       data-id="${escapeHtml(job.job_id)}"
     >
-      <div class="ji-title">${escapeHtml(job.title || 'Unknown')}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+        <div class="ji-title">${escapeHtml(job.title || 'Unknown')}</div>
+        ${job.source === 'linkedin' ? '<span class="source-badge source-linkedin" style="flex-shrink:0;margin-top:1px">LI</span>' : ''}
+      </div>
       <div class="ji-co">${escapeHtml(job.company_name || '—')}</div>
       <div class="ji-foot">
         <span class="stag ${fitInfo.cssClass}">${escapeHtml(fitInfo.label)} | ${fitInfo.score}</span>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="ji-meta">${escapeHtml(job.place || '—')}</span>
+        <div style="display:flex;align-items:center;gap:6px;max-width:55%">
+          <span class="ji-meta" style="text-align:right;word-break:break-word">${escapeHtml(job.place || '—')}</span>
           ${getStatusIcon(status)}
         </div>
       </div>

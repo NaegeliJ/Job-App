@@ -86,19 +86,20 @@ void insert_or_update_job(sqlite3 *db, const Job &job) {
             job_id, title, company_name, place, zipcode, canton_code,
             employment_grade, application_url, detail_url,
             initial_publication_date, publication_end_date, template_text,
-            scraped_at, user_status, availability_status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),'unseen','active')
+            scraped_at, user_status, availability_status, source
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),'unseen','active',?)
         ON CONFLICT(job_id) DO UPDATE SET
             title = excluded.title,
             company_name = CASE WHEN excluded.company_name != '' THEN excluded.company_name ELSE company_name END,
             scraped_at = excluded.scraped_at,
             availability_status = 'active'
     )";
-    
+
     exec_write(db, sql, {
         job.job_id, job.title, job.company_name, job.place, job.zipcode,
         job.canton_code, std::to_string(job.employment_grade),
-        job.application_url, job.detail_url, job.pub_date, job.end_date, job.template_text
+        job.application_url, job.detail_url, job.pub_date, job.end_date, job.template_text,
+        job.source.empty() ? "jobs_ch" : job.source
     });
 }
 
@@ -131,6 +132,10 @@ void delete_expired_jobs(sqlite3* db) {
     exec_write(db, R"(
         DELETE FROM jobs
         WHERE publication_end_date != '' AND publication_end_date < date('now')
+    )", {});
+    exec_write(db, R"(
+        DELETE FROM jobs
+        WHERE source = 'linkedin' AND scraped_at < date('now', '-60 days')
     )", {});
 }
 
@@ -168,15 +173,16 @@ void db_init(sqlite3 *db) {
 }
 
 void update_job_details(sqlite3* db, const Job& job) {
-    const std::string sql = 
+    const std::string sql =
         "UPDATE jobs SET title = ?, company_name = CASE WHEN ? != '' THEN ? ELSE company_name END, "
-        "place = ?, zipcode = ?, canton_code = ?, detail_url = ?, "
+        "place = ?, zipcode = ?, canton_code = ?, employment_grade = ?, detail_url = ?, "
         "initial_publication_date = ?, publication_end_date = ?, template_text = ?, "
         "scraped_at = datetime('now') WHERE job_id = ?";
-    
+
     exec_write(db, sql, {
         job.title, job.company_name, job.company_name,
         job.place, job.zipcode, job.canton_code,
+        std::to_string(job.employment_grade),
         job.detail_url, job.pub_date, job.end_date,
         job.template_text, job.job_id
     });
@@ -184,29 +190,30 @@ void update_job_details(sqlite3* db, const Job& job) {
 
 std::vector<Job> get_jobs_needing_details(sqlite3* db) {
     std::vector<Job> jobs;
-    const std::string sql = 
+    const std::string sql =
         "SELECT job_id, title, company_name, place, zipcode, canton_code, "
         "employment_grade, application_url, detail_url, initial_publication_date, "
-        "publication_end_date, template_text "
+        "publication_end_date, template_text, source "
         "FROM jobs "
         "WHERE template_text IS NULL OR template_text = '' "
         "ORDER BY initial_publication_date DESC "
         "LIMIT 100";
-    
+
     exec_query(db, sql, [&](sqlite3_stmt* stmt) {
         Job job;
-        job.job_id = getColumn(stmt, 0);
-        job.title = getColumn(stmt, 1);
-        job.company_name = getColumn(stmt, 2);
-        job.place = getColumn(stmt, 3);
-        job.zipcode = getColumn(stmt, 4);
-        job.canton_code = getColumn(stmt, 5);
+        job.job_id          = getColumn(stmt, 0);
+        job.title           = getColumn(stmt, 1);
+        job.company_name    = getColumn(stmt, 2);
+        job.place           = getColumn(stmt, 3);
+        job.zipcode         = getColumn(stmt, 4);
+        job.canton_code     = getColumn(stmt, 5);
         job.employment_grade = sqlite3_column_int(stmt, 6);
         job.application_url = getColumn(stmt, 7);
-        job.detail_url = getColumn(stmt, 8);
-        job.pub_date = getColumn(stmt, 9);
-        job.end_date = getColumn(stmt, 10);
-        job.template_text = getColumn(stmt, 11);
+        job.detail_url      = getColumn(stmt, 8);
+        job.pub_date        = getColumn(stmt, 9);
+        job.end_date        = getColumn(stmt, 10);
+        job.template_text   = getColumn(stmt, 11);
+        job.source          = getColumn(stmt, 12);
         jobs.push_back(job);
     }, {});
     
@@ -226,7 +233,7 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
                user_status, rating, notes, availability_status, detail_url,
                initial_publication_date, publication_end_date, fit_score, fit_label,
                fit_summary, fit_reasoning, fit_checked_at, fit_profile_hash,
-               template_text
+               template_text, source
         FROM jobs
     )";
     exec_query(db, sql, [&](sqlite3_stmt* stmt) {
@@ -253,6 +260,7 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
         job.fit_checked_at      = getColumn(stmt, 19);
         job.fit_profile_hash    = getColumn(stmt, 20);
         job.template_text       = getColumn(stmt, 21);
+        job.source              = getColumn(stmt, 22);
         jobs.push_back(job);
     });
     return jobs;
@@ -269,6 +277,7 @@ void db_v2_ensure_tables(sqlite3* db) {
     if (!column_exists(db, "jobs", "fit_reasoning")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_reasoning TEXT;");
     if (!column_exists(db, "jobs", "fit_checked_at")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_checked_at TEXT;");
     if (!column_exists(db, "jobs", "fit_profile_hash")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_profile_hash TEXT;");
+    if (!column_exists(db, "jobs", "source"))           exec_write(db, "ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'jobs_ch';");
 }
 
 std::optional<std::string> get_job_template_text(sqlite3* db, const std::string& job_id) {

@@ -24,6 +24,7 @@ struct Job {
     std::string pub_date;
     std::string end_date;
     std::string template_text;
+    std::string source;  // 'jobs_ch' | 'linkedin'
 };
 
 struct JobRecord : Job {

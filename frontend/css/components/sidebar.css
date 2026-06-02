@@ -121,6 +121,16 @@
   letter-spacing: 0.02em;
 }
 
+.source-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+}
+.source-linkedin { background: #0a66c2; color: #fff; }
+
 /* Fit tag for job list - label on top, score below */
 .fit-tag {
   display: flex;

@@ -88,6 +88,18 @@ function setupProviderHandlers() {
       .forEach(c => c.classList.remove('active'));
     chip.classList.add('active');
   });
+
+  setupSourceToggle('cfg-jobsch-enabled',  'cfg-jobsch-settings');
+  setupSourceToggle('cfg-linkedin-enabled', 'cfg-linkedin-settings');
+}
+
+function setupSourceToggle(toggleId, settingsId) {
+  const toggle = document.getElementById(toggleId);
+  const settings = document.getElementById(settingsId);
+  if (!toggle || !settings) return;
+  toggle.addEventListener('change', () => {
+    settings.style.display = toggle.checked ? '' : 'none';
+  });
 }
 
 function updateProviderUI(providerKey) {
@@ -143,9 +155,9 @@ function renderSection(title, content) {
     </div>`;
 }
 
-function renderField(label, inputHtml) {
+function renderField(label, inputHtml, { full = false } = {}) {
   return `
-    <div class="cfg-field">
+    <div class="cfg-field${full ? ' full' : ''}">
       <div class="cfg-label">${label}</div>
       ${inputHtml}
     </div>`;
@@ -196,14 +208,62 @@ function renderAiSection(aiConfig) {
   return renderSection('AI Provider', renderGrid(fields));
 }
 
+function renderToggle(id, checked) {
+  return `
+    <label class="cfg-toggle">
+      <input type="checkbox" id="${id}"${checked ? ' checked' : ''}>
+      <span class="cfg-toggle-slider"></span>
+    </label>`;
+}
+
+function renderSourceCard(name, toggleId, settingsId, enabled, settingsHtml) {
+  return `
+    <div class="cfg-source-card">
+      <div class="cfg-source-header">
+        <span class="cfg-source-name">${name}</span>
+        ${renderToggle(toggleId, enabled)}
+      </div>
+      <div class="${settingsId}-wrap" id="${settingsId}"${!enabled ? ' style="display:none"' : ''}>
+        <div class="cfg-source-settings">
+          ${settingsHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderScrapeSection(config) {
   const scrape = config.scrape || {};
-  const fields = [
+  const li = config.linkedin || {};
+  const jobschEnabled = scrape.enabled !== false;
+  const liEnabled = !!li.enabled;
+
+  const jobschSettings = renderGrid([
     renderField('Search Queries (one per line)',
-      renderTextarea('cfg-queries', (scrape.queries || []).join('\n'), { minHeight: '100px' })),
-    renderField('Rows per Query', renderInput('cfg-rows', scrape.rows ?? 50))
-  ];
-  return renderSection('Scraping', renderGrid(fields));
+      renderTextarea('cfg-queries', (scrape.queries || []).join('\n'), { minHeight: '80px' }), { full: true }),
+    renderField('Rows per Query', renderInput('cfg-rows', scrape.rows ?? 10))
+  ]);
+
+  const timeRangeSelect = `
+    <select class="cfg-input" id="cfg-li-time-range">
+      <option value="r86400"${li.time_range === 'r86400' ? ' selected' : ''}>Past 24 hours</option>
+      <option value="r604800"${!li.time_range || li.time_range === 'r604800' ? ' selected' : ''}>Past week</option>
+      <option value="r2592000"${li.time_range === 'r2592000' ? ' selected' : ''}>Past month</option>
+    </select>`;
+
+  const liSettings = renderGrid([
+    renderField('Search Queries (one per line)',
+      renderTextarea('cfg-li-queries', (li.queries || []).join('\n'), { minHeight: '80px' }), { full: true }),
+    renderField('Location',    renderInput('cfg-li-location',    li.location    || 'Switzerland', 'text')),
+    renderField('Max Results', `<input class="cfg-input" id="cfg-li-max-results" type="number" min="1" max="50" value="${escapeHtml(String(li.max_results ?? 25))}">`),
+    renderField('Time Range',  timeRangeSelect)
+  ]);
+
+  const cards = [
+    renderSourceCard('Jobs.ch',  'cfg-jobsch-enabled',  'cfg-jobsch-settings',  jobschEnabled, jobschSettings),
+    renderSourceCard('LinkedIn', 'cfg-linkedin-enabled', 'cfg-linkedin-settings', liEnabled,    liSettings)
+  ].join('');
+
+  return renderSection('Scraping', `<div style="display:flex;flex-direction:column;gap:10px">${cards}</div>`);
 }
 
 function renderFitcheckSection(config) {
@@ -276,11 +336,19 @@ export async function saveSettings() {
       return;
     }
 
-    // Save main config (scrape + advanced fitcheck params)
+    // Save main config (scrape + linkedin + advanced fitcheck params)
     const updated = JSON.parse(JSON.stringify(rawConfig));
     updated.scrape = {
-      queries: getTextareaLines('cfg-queries'),
-      rows: getIntValue('cfg-rows', 50)
+      enabled:  document.getElementById('cfg-jobsch-enabled')?.checked !== false,
+      queries:  getTextareaLines('cfg-queries'),
+      rows:     getIntValue('cfg-rows', 10)
+    };
+    updated.linkedin = {
+      enabled:     !!document.getElementById('cfg-linkedin-enabled')?.checked,
+      queries:     getTextareaLines('cfg-li-queries'),
+      location:    getStringValue('cfg-li-location') || 'Switzerland',
+      time_range:  getStringValue('cfg-li-time-range') || 'r604800',
+      max_results: Math.min(50, Math.max(1, getIntValue('cfg-li-max-results', 25)))
     };
     updated.fitcheck = {
       ...(updated.fitcheck || {}),

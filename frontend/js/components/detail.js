@@ -58,7 +58,7 @@ function buildHeader(job, city, mapsUrl, displayScore, displayLabel, starsHtml) 
   const detailUrl = /^https?:\/\//.test(job.detail_url || '') ? job.detail_url : '';
   const appUrl = /^https?:\/\//.test(job.application_url || '') ? job.application_url : '';
   const safeJobUrl = detailUrl || appUrl;
-  const jobUrlLabel = detailUrl ? 'View on jobs.ch ↗' : 'View Job ↗';
+  const jobUrlLabel = job.source === 'linkedin' ? 'View on LinkedIn ↗' : (detailUrl ? 'View on jobs.ch ↗' : 'View Job ↗');
 
   return `
     <div class="detail-header">

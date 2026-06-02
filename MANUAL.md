@@ -44,6 +44,19 @@ Search bar (top center) filters by title and company in real time.
 
 ---
 
+## Auto-deletion
+
+Stale jobs are hard-deleted automatically on every scrape run. No UI action needed.
+
+| Source | Rule |
+|--------|------|
+| jobs.ch | Deleted when `publication_end_date` has passed |
+| LinkedIn | Deleted 60 days after first scraped |
+
+Hard-delete = row removed from DB entirely, not recoverable via `restore:all`.
+
+---
+
 ## Job detail
 
 Click any job to open the detail panel.

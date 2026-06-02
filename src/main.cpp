@@ -9,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
+#include <regex>
 #include <filesystem>
 #include <curl/curl.h>
 #include "httplib.h"
@@ -94,6 +95,12 @@ void rateLimitSleep() {
     std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
 }
 
+static void rateLimitSleepLinkedIn() {
+    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::uniform_int_distribution<int> dist(1500, 3000);
+    std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
+}
+
 std::string httpRequest(const std::string& url, const std::string& method,
                         const std::vector<std::string>& headers = {},
                         const std::string& postData = "",
@@ -148,6 +155,125 @@ std::string httpGet(const std::string& url) {
         "X-Node-Request: false",
         "X-Source: jobs_ch_desktop"
     });
+}
+
+// For detail fetch (guest API — low profile, purpose-built endpoint)
+static std::string httpGetLinkedIn(const std::string& url, long* out_status = nullptr) {
+    return httpRequest(url, "GET", {
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language: en-US,en;q=0.9",
+        "Referer: https://www.linkedin.com/jobs/search/"
+    }, "", 30L, out_status);
+}
+
+// For job list search (public page — more results, same HTML structure)
+static std::string httpGetLinkedInPublic(const std::string& url, long* out_status = nullptr) {
+    return httpRequest(url, "GET", {
+        "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language: en-US,en;q=0.9",
+        "Referer: https://www.google.com/",
+        "Upgrade-Insecure-Requests: 1",
+        "DNT: 1"
+    }, "", 30L, out_status);
+}
+
+static std::string decodeHtmlEntities(const std::string& s) {
+    struct { const char* entity; char ch; } table[] = {
+        {"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'},
+        {"&#x27;", '\''}, {"&#39;", '\''}, {"&nbsp;", ' '}
+    };
+    std::string out = s;
+    for (auto& e : table) {
+        size_t pos = 0;
+        while ((pos = out.find(e.entity, pos)) != std::string::npos)
+            out.replace(pos, strlen(e.entity), 1, e.ch);
+    }
+    return out;
+}
+
+static std::string stripHtmlTags(const std::string& s) {
+    std::string out;
+    bool inTag = false;
+    for (char c : s) {
+        if (c == '<') inTag = true;
+        else if (c == '>') inTag = false;
+        else if (!inTag) out += c;
+    }
+    return out;
+}
+
+static std::string cleanHtmlField(const std::string& raw) {
+    std::string s = decodeHtmlEntities(stripHtmlTags(raw));
+    std::string out;
+    bool inSpace = false;
+    for (unsigned char c : s) {
+        if (std::isspace(c)) {
+            if (!inSpace) { out += ' '; inSpace = true; }
+        } else {
+            out += (char)c; inSpace = false;
+        }
+    }
+    while (!out.empty() && std::isspace((unsigned char)out.front())) out = out.substr(1);
+    while (!out.empty() && std::isspace((unsigned char)out.back()))  out.pop_back();
+    return out;
+}
+
+// Find first occurrence of classMarker (e.g. `class="foo"`), skip to closing '>',
+// then return content up to endTag. Safe on large HTML — no regex backtracking.
+static std::string extractTagContent(const std::string& html, const std::string& classMarker, const std::string& endTag) {
+    size_t pos = html.find(classMarker);
+    if (pos == std::string::npos) return "";
+    size_t gt = html.find('>', pos);
+    if (gt == std::string::npos) return "";
+    size_t end = html.find(endTag, gt + 1);
+    if (end == std::string::npos) return "";
+    return html.substr(gt + 1, end - gt - 1);
+}
+
+static std::vector<std::string> findAllCaptures(const std::string& text, const std::string& pattern) {
+    std::vector<std::string> results;
+    try {
+        std::regex re(pattern);
+        auto it  = std::sregex_iterator(text.begin(), text.end(), re);
+        auto end = std::sregex_iterator();
+        for (; it != end; ++it)
+            results.push_back((*it)[1].str());
+    } catch (const std::regex_error& e) {
+        std::cerr << "[LI] regex error: " << e.what() << std::endl;
+    }
+    return results;
+}
+
+static std::string parseLinkedInPubDate(const std::string& html) {
+    std::time_t now = std::time(nullptr);
+    std::tm tm = {};
+#ifdef _MSC_VER
+    localtime_s(&tm, &now);
+#else
+    localtime_r(&now, &tm);
+#endif
+    std::regex re(R"((\d+)\s+(day|days|week|weeks|month|months|hour|hours|minute|minutes)\s+ago)");
+    std::smatch m;
+    if (std::regex_search(html, m, re)) {
+        int n = std::stoi(m[1].str());
+        std::string unit = m[2].str();
+        if (unit == "day" || unit == "days")         tm.tm_mday -= n;
+        else if (unit == "week" || unit == "weeks")  tm.tm_mday -= 7 * n;
+        else if (unit == "month" || unit == "months") tm.tm_mon -= n;
+        // hours/minutes → today, no change
+        std::mktime(&tm);
+        char buf[11];
+        std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm);
+        return buf;
+    }
+    return "";
+}
+
+static int parseLinkedInEmploymentGrade(const std::string& html) {
+    if (html.find("Part-time") != std::string::npos) return 50;
+    return 100;
 }
 
 // AI inference calls need a longer timeout — model inference can take several minutes.
@@ -228,8 +354,16 @@ json buildAiRequest(const std::string& provider, const std::string& model, const
 
 struct ConfigV2 {
     // Scraping
+    bool                     scrape_enabled{true};
     std::vector<std::string> scrape_queries;
     int                      scrape_rows{};
+
+    // LinkedIn
+    bool                     linkedin_enabled{false};
+    std::vector<std::string> linkedin_queries;
+    std::string              linkedin_location{"Switzerland"};
+    std::string              linkedin_time_range{"r604800"};
+    int                      linkedin_max_results{25};
 
     // Fit-check
     std::string              provider{"ollama_local"};
@@ -260,8 +394,18 @@ ConfigV2 loadConfigV2() {
     validateConfigV2(c);
     ConfigV2 cfg;
 
+    cfg.scrape_enabled    = c["scrape"].value("enabled", true);
     cfg.scrape_queries    = c["scrape"]["queries"].get<std::vector<std::string>>();
     cfg.scrape_rows       = c["scrape"]["rows"].get<int>();
+
+    if (c.contains("linkedin")) {
+        cfg.linkedin_enabled     = c["linkedin"].value("enabled", false);
+        if (c["linkedin"].contains("queries"))
+            cfg.linkedin_queries = c["linkedin"]["queries"].get<std::vector<std::string>>();
+        cfg.linkedin_location    = c["linkedin"].value("location", "Switzerland");
+        cfg.linkedin_time_range  = c["linkedin"].value("time_range", "r604800");
+        cfg.linkedin_max_results = std::min(50, std::max(1, c["linkedin"].value("max_results", 25)));
+    }
 
     cfg.provider          = c["fitcheck"].value("provider", "ollama_local");
     cfg.fitcheck_limit    = c["fitcheck"]["limit"].get<int>();
@@ -275,6 +419,58 @@ ConfigV2 loadConfigV2() {
     return cfg;
 }
 
+
+static std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg) {
+    std::vector<Job> result;
+    if (!cfg.linkedin_enabled || cfg.linkedin_queries.empty()) return result;
+
+    for (const auto& q : cfg.linkedin_queries) {
+        std::string url =
+            "https://www.linkedin.com/jobs/search/"
+            "?keywords=" + urlEncode(q)
+            + "&location=" + urlEncode(cfg.linkedin_location)
+            + "&f_TPR=" + urlEncode(cfg.linkedin_time_range)
+            + "&position=1&pageNum=0";
+
+        rateLimitSleepLinkedIn();
+        long status = 0;
+        std::string html = httpGetLinkedInPublic(url, &status);
+
+        if (status == 429) {
+            std::cerr << "[LI] 429 on search for '" << q << "', sleeping 30s" << std::endl;
+            std::this_thread::sleep_for(std::chrono::seconds(30));
+            html = httpGetLinkedInPublic(url, &status);
+        }
+        if (status != 200 || html.empty()) {
+            std::cerr << "[LI] Search failed (HTTP " << status << ") for '" << q << "'" << std::endl;
+            continue;
+        }
+
+        // Use named delimiter LI to avoid )" collision with regex patterns
+        auto ids       = findAllCaptures(html, R"LI(data-entity-urn="urn:li:jobPosting:(\d+)")LI");
+        auto titles    = findAllCaptures(html, R"(class="base-search-card__title"[^>]*>([\s\S]*?)</h3>)");
+        auto companies = findAllCaptures(html, R"(class="base-search-card__subtitle"[^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)</a>)");
+        auto locations = findAllCaptures(html, R"(class="job-search-card__location"[^>]*>([\s\S]*?)</span>)");
+
+        int count = 0;
+        for (size_t i = 0; i < ids.size() && count < cfg.linkedin_max_results; i++, count++) {
+            Job job;
+            job.job_id           = "li_" + ids[i];
+            job.source           = "linkedin";
+            job.title            = i < titles.size()    ? cleanHtmlField(titles[i])    : "";
+            job.company_name     = i < companies.size() ? cleanHtmlField(companies[i]) : "";
+            job.place            = i < locations.size() ? cleanHtmlField(locations[i]) : "";
+            job.detail_url       = "https://www.linkedin.com/jobs/view/" + ids[i];
+            job.application_url  = job.detail_url;
+            job.canton_code      = "N/A";
+            job.zipcode          = "";
+            job.employment_grade = 100;
+            result.push_back(std::move(job));
+        }
+        std::cout << "[LI] Query '" << q << "': " << count << " jobs" << std::endl;
+    }
+    return result;
+}
 
 // ── JSON / JOB HELPERS ───────────────────────────────────────────────────────
 
@@ -303,6 +499,7 @@ json job_record_to_json(const JobRecord& job) {
     job_json["fit_reasoning"]       = job.fit_reasoning;
     job_json["fit_checked_at"]      = job.fit_checked_at;
     job_json["fit_profile_hash"]    = job.fit_profile_hash;
+    job_json["source"]              = job.source.empty() ? "jobs_ch" : job.source;
 
     return job_json;
 }
@@ -600,13 +797,17 @@ int main() {
 
         std::vector<std::string> queries;
         int rows;
+        bool jobsch_enabled;
+        ConfigV2 li_cfg;
         {
             std::shared_lock<std::shared_mutex> lock(config_v2_mutex);
-            queries = config_v2.scrape_queries;
-            rows = config_v2.scrape_rows;
+            jobsch_enabled = config_v2.scrape_enabled;
+            queries        = config_v2.scrape_queries;
+            rows           = config_v2.scrape_rows;
+            li_cfg         = config_v2;
         }
 
-        for (const auto& q : queries) {
+        if (jobsch_enabled) for (const auto& q : queries) {
             rateLimitSleep();
             std::string url = "https://job-search-api.jobs.ch/search/semantic?query="
                 + urlEncode(q) + "&rows=" + std::to_string(rows) + "&page=1";
@@ -626,10 +827,25 @@ int main() {
                 }
 
             } catch (const std::exception& e) {
-                std::cerr << "[ERROR] Failed to process search results for query '" << q 
+                std::cerr << "[ERROR] Failed to process search results for query '" << q
                           << "': " << e.what() << std::endl;
             } catch (...) {
                 std::cerr << "[ERROR] Unknown error processing query: " << q << std::endl;
+            }
+        }
+
+        if (li_cfg.linkedin_enabled) {
+            std::cout << "[LI] Starting LinkedIn scrape" << std::endl;
+            try {
+                auto li_jobs = scrapeLinkedIn(li_cfg);
+                for (auto& job : li_jobs) {
+                    std::lock_guard<std::mutex> lock(db_write_mutex);
+                    insert_or_update_job(db, job);
+                    inserted++;
+                }
+                std::cout << "[LI] Inserted " << li_jobs.size() << " LinkedIn jobs" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[LI] Scrape error: " << e.what() << std::endl;
             }
         }
 
@@ -637,34 +853,105 @@ int main() {
         res.set_content(json{{"ok", true}, {"count", inserted}}.dump(), "application/json");
     });
 
-    server.Post("/api/scrape/details", [&db, &config_v2, &config_v2_mutex, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
-        std::vector<Job> jobs_needing_details = get_jobs_needing_details(db);
-        std::cout << "[INFO] Fetching details for " << jobs_needing_details.size() << " jobs" << std::endl;
-
-        int updated = 0, failed = 0;
-         for (const auto& job : jobs_needing_details) {
-            try {
-                rateLimitSleep();
-                json detail = json::parse(httpGet("https://www.jobs.ch/api/v1/public/search/job/" + urlEncode(job.job_id)));
-
-                Job updated_job = job_from_json(detail);
-                updated_job.job_id = job.job_id;
-
-                {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
-                    update_job_details(db, updated_job);
-                }
-                updated++;
-                std::cout << "[DEBUG] Fetched details for job: " << job.job_id << std::endl;
-
-            } catch (const std::exception& e) {
-                std::cerr << "Failed to fetch details for job: " << job.job_id << " - " << e.what() << std::endl;
-                failed++;
-            }
+    server.Post("/api/scrape/details", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+        std::vector<Job> jobs;
+        {
+            std::lock_guard<std::mutex> lock(db_write_mutex);
+            jobs = get_jobs_needing_details(db);
         }
+        int total = static_cast<int>(jobs.size());
+        std::cout << "[INFO] Launching background detail fetch for " << total << " jobs" << std::endl;
 
-        std::cout << "[INFO] Details fetch completed: " << updated << " updated, " << failed << " failed" << std::endl;
-        res.set_content(json{{"ok", true}, {"updated", updated}, {"failed", failed}}.dump(), "application/json");
+        std::thread([jobs = std::move(jobs), &db, &db_write_mutex]() {
+            int updated = 0, failed = 0;
+            bool li_blocked = false;
+
+            for (const auto& job : jobs) {
+                const bool is_linkedin = (job.source == "linkedin");
+
+                if (is_linkedin && li_blocked) continue;
+
+                try {
+                    Job updated_job;
+
+                    if (!is_linkedin) {
+                        // jobs.ch detail
+                        rateLimitSleep();
+                        json detail = json::parse(httpGet(
+                            "https://www.jobs.ch/api/v1/public/search/job/" + urlEncode(job.job_id)));
+                        updated_job = job_from_json(detail);
+                        updated_job.job_id = job.job_id;
+                        updated_job.source = "jobs_ch";
+
+                    } else {
+                        // LinkedIn detail — strip "li_" prefix for the API URL
+                        std::string li_id = job.job_id.substr(3);
+                        std::string url   = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/" + li_id;
+
+                        rateLimitSleepLinkedIn();
+                        long status = 0;
+                        std::string html = httpGetLinkedIn(url, &status);
+
+                        if (status == 429) {
+                            std::cerr << "[LI] 429 on detail " << job.job_id << ", sleeping 30s and retrying" << std::endl;
+                            std::this_thread::sleep_for(std::chrono::seconds(30));
+                            html = httpGetLinkedIn(url, &status);
+                        }
+                        if (status == 999 || (status != 200 && status != 0)) {
+                            std::cerr << "[LI] HTTP " << status << " on detail " << job.job_id << " — stopping LinkedIn detail fetches" << std::endl;
+                            li_blocked = true;
+                            failed++;
+                            continue;
+                        }
+                        if (html.empty()) {
+                            std::cerr << "[LI] Empty response for detail " << job.job_id << std::endl;
+                            failed++;
+                            continue;
+                        }
+
+                        updated_job = job; // carry over existing fields
+
+                        // title
+                        {
+                            std::string v = extractTagContent(html, "top-card-layout__title", "</h1>");
+                            if (!v.empty()) updated_job.title = cleanHtmlField(v);
+                        }
+                        // company
+                        {
+                            std::string v = extractTagContent(html, "topcard__org-name-link", "</a>");
+                            if (!v.empty()) updated_job.company_name = cleanHtmlField(v);
+                        }
+                        // description (try primary selector, fall back)
+                        {
+                            std::string v = extractTagContent(html, "show-more-less-html__markup", "</div>");
+                            if (v.empty())
+                                v = extractTagContent(html, "description__text", "</div>");
+                            if (!v.empty())
+                                updated_job.template_text = v;  // store raw HTML; frontend + AI clean on use
+                        }
+                        // pub_date
+                        updated_job.pub_date = parseLinkedInPubDate(html);
+                        // employment_grade
+                        updated_job.employment_grade = parseLinkedInEmploymentGrade(html);
+                        updated_job.source = "linkedin";
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        update_job_details(db, updated_job);
+                    }
+                    updated++;
+                    std::cout << "[DETAIL] " << job.job_id << " updated" << std::endl;
+
+                } catch (const std::exception& e) {
+                    std::cerr << "[DETAIL] Failed for " << job.job_id << ": " << e.what() << std::endl;
+                    failed++;
+                }
+            }
+            std::cout << "[INFO] Background detail fetch done: " << updated << " updated, " << failed << " failed" << std::endl;
+        }).detach();
+
+        res.set_content(json{{"ok", true}, {"status", "background"}, {"count", total}}.dump(), "application/json");
     });
 
     server.Get("/api/config", [](const httplib::Request&, httplib::Response& res) {

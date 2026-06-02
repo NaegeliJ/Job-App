@@ -1,7 +1,7 @@
 {
   "fitcheck": {
     "endpoint": "https://ollama.com/v1/chat/completions",
-    "limit": 5,
+    "limit": 10,
     "max_tokens": 4000,
     "model": "gemma4:31b-cloud",
     "provider": "ollama_cloud",
@@ -9,11 +9,21 @@
     "top_k": 65,
     "top_p": 0.95
   },
+  "linkedin": {
+    "enabled": true,
+    "location": "Switzerland",
+    "max_results": 20,
+    "queries": [
+      "Embedded Software Engineer"
+    ],
+    "time_range": "r2592000"
+  },
   "scrape": {
+    "enabled": false,
     "queries": [
       "Robotics Engineer",
       "Embedded Software Engineer"
     ],
-    "rows": 10
+    "rows": 5
   }
 }
