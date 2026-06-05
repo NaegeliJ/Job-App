@@ -505,21 +505,28 @@ json job_record_to_json(const JobRecord& job) {
 }
 
 Job job_from_json(const json& data) {
+    auto str = [](const json& j, const std::string& key, const std::string& def = "") -> std::string {
+        auto it = j.find(key);
+        if (it == j.end() || it->is_null()) return def;
+        return it->get<std::string>();
+    };
+
     Job job;
-    job.job_id           = data.value("id", "");
-    job.title            = data.value("title", "");
-    job.company_name     = data.contains("company") ? data["company"].value("name", "") : "";
-    job.place            = data.value("place", "");
-    job.zipcode          = data.value("zipcode", "");
-    job.canton_code      = (data.contains("locations") && !data["locations"].empty())
-                           ? data["locations"][0].value("cantonCode", "N/A") : "N/A";
+    job.job_id           = str(data, "id");
+    job.title            = str(data, "title");
+    job.company_name     = (data.contains("company") && !data["company"].is_null())
+                           ? str(data["company"], "name") : "";
+    job.place            = str(data, "place");
+    job.zipcode          = str(data, "zipcode");
+    job.canton_code      = (data.contains("locations") && !data["locations"].is_null() && !data["locations"].empty())
+                           ? str(data["locations"][0], "cantonCode", "N/A") : "N/A";
     job.employment_grade = data.value("employment_grade", 100);
-    job.application_url  = data.value("application_url", "");
-    job.detail_url       = (data.contains("_links") && data["_links"].contains("detail_de"))
-                           ? data["_links"]["detail_de"].value("href", "") : "";
-    job.pub_date         = data.value("publication_date", "");
-    job.end_date         = data.value("publication_end_date", "");
-    job.template_text    = data.value("template_text", "");
+    job.application_url  = str(data, "application_url");
+    job.detail_url       = (data.contains("_links") && !data["_links"].is_null() && data["_links"].contains("detail_de") && !data["_links"]["detail_de"].is_null())
+                           ? str(data["_links"]["detail_de"], "href") : "";
+    job.pub_date         = str(data, "publication_date");
+    job.end_date         = str(data, "publication_end_date");
+    job.template_text    = str(data, "template_text");
     return job;
 }
 

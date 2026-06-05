@@ -324,7 +324,7 @@ std::vector<JobRecord> get_jobs_needing_fitcheck_v2(sqlite3* db, int limit) {
                user_status, rating, notes, availability_status, detail_url,
                initial_publication_date, publication_end_date, template_text
         FROM jobs
-        WHERE fit_label IS NULL AND template_text IS NOT NULL AND (user_status IS NULL OR user_status != 'deleted')
+        WHERE fit_label IS NULL AND template_text IS NOT NULL AND template_text != '' AND (user_status IS NULL OR user_status != 'deleted')
         ORDER BY initial_publication_date DESC
         LIMIT ?
     )";
