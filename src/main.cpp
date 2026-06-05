@@ -904,7 +904,12 @@ int main() {
                             std::this_thread::sleep_for(std::chrono::seconds(30));
                             html = httpGetLinkedIn(url, &status);
                         }
-                        if (status == 999 || (status != 200 && status != 0)) {
+                        if (status == 404) {
+                            std::cerr << "[LI] 404 on detail " << job.job_id << " — job expired, skipping" << std::endl;
+                            failed++;
+                            continue;
+                        }
+                        if (status == 999 || status == 429 || (status != 200 && status != 0)) {
                             std::cerr << "[LI] HTTP " << status << " on detail " << job.job_id << " — stopping LinkedIn detail fetches" << std::endl;
                             li_blocked = true;
                             failed++;
