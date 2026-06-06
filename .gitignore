@@ -5,6 +5,10 @@
 cmake-build-debug/
 cmake-build-release/
 cmake-build-rework/
+build-win/
+
+# Downloaded deps
+deps/
 
 # Compiled binaries
 *.exe
