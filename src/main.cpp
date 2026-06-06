@@ -1,6 +1,8 @@
 #define _WIN32_WINNT 0x0A00
 #ifdef _WIN32
+#include <winsock2.h>
 #include <windows.h>
+#include <shellapi.h>
 #endif
 #include <iostream>
 #include <fstream>
@@ -252,7 +254,7 @@ static std::vector<std::string> findAllCaptures(const std::string& text, const s
 static std::string parseLinkedInPubDate(const std::string& html) {
     std::time_t now = std::time(nullptr);
     std::tm tm = {};
-#ifdef _MSC_VER
+#ifdef _WIN32
     localtime_s(&tm, &now);
 #else
     localtime_r(&now, &tm);
@@ -1663,7 +1665,7 @@ then trigger a profile refresh to update the narrative.*
             if (job.pub_date.empty()) {
                 std::time_t now = std::time(nullptr);
                 std::tm tm_buf{};
-#ifdef _MSC_VER
+#ifdef _WIN32
                 localtime_s(&tm_buf, &now);
 #else
                 localtime_r(&now, &tm_buf);

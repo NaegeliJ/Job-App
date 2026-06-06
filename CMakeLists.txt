@@ -8,7 +8,10 @@ if(NOT DEFINED APP_VERSION OR APP_VERSION STREQUAL "")
 endif()
 add_compile_definitions(APP_VERSION="${APP_VERSION}")
 
-add_executable(Job_App src/main.cpp src/sqlite3.c src/db.cpp)
+if(WIN32)
+    set(WIN_COMPAT_SRC src/win_compat.c)
+endif()
+add_executable(Job_App src/main.cpp src/sqlite3.c src/db.cpp ${WIN_COMPAT_SRC})
 
 target_include_directories(Job_App PRIVATE include/)
 
@@ -16,10 +19,23 @@ if(WIN32)
     if(NOT DEFINED CURL_WIN_DIR OR CURL_WIN_DIR STREQUAL "")
         message(FATAL_ERROR "Set -DCURL_WIN_DIR=<path> or run scripts/build-win.sh")
     endif()
+    target_compile_definitions(Job_App PRIVATE CURL_STATICLIB)
     target_include_directories(Job_App PRIVATE "${CURL_WIN_DIR}/include")
     target_link_libraries(Job_App
         "${CURL_WIN_DIR}/lib/libcurl.a"
-        ws2_32 wldap32 crypt32
+        "${CURL_WIN_DIR}/lib/libssl.a"
+        "${CURL_WIN_DIR}/lib/libcrypto.a"
+        "${CURL_WIN_DIR}/lib/libnghttp2.a"
+        "${CURL_WIN_DIR}/lib/libnghttp3.a"
+        "${CURL_WIN_DIR}/lib/libngtcp2.a"
+        "${CURL_WIN_DIR}/lib/libngtcp2_crypto_libressl.a"
+        "${CURL_WIN_DIR}/lib/libssh2.a"
+        "${CURL_WIN_DIR}/lib/libpsl.a"
+        "${CURL_WIN_DIR}/lib/libbrotlidec.a"
+        "${CURL_WIN_DIR}/lib/libbrotlicommon.a"
+        "${CURL_WIN_DIR}/lib/libzstd.a"
+        "${CURL_WIN_DIR}/lib/libz.a"
+        ws2_32 wldap32 crypt32 secur32 bcrypt iphlpapi
     )
     target_link_options(Job_App PRIVATE -static-libgcc -static-libstdc++)
 else()
