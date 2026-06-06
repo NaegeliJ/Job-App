@@ -4,11 +4,21 @@ Scrape job listings from jobs.ch or import a job manually, score them against yo
 
 ## Quick start
 
-Requires Docker on Linux.
+Two ways to run: a standalone Windows exe (no Docker) or the Docker image on Linux.
+
+### Windows (standalone exe)
+
+Download `Job_App-<version>-win64.zip` from the [Releases page](https://github.com/Meisdy/Job-App/releases/latest), unzip anywhere, and run `Job_App.exe`. No install, no DLLs, no Docker. The exe creates its `data/` folder on first run and opens your browser automatically.
+
+The zip contains the exe alongside `config/` and `frontend/` — keep them together in the same folder.
+
+### Linux (Docker)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | bash
 ```
+
+### First run
 
 Open **http://localhost:8080** and complete onboarding. Pick your AI provider, enter the endpoint and model, paste your API key (or leave blank for local Ollama). The CV step accepts a PDF drop or plain text paste.
 
@@ -38,7 +48,7 @@ All AI provider settings are configured in **Settings** (gear icon) — no file 
 
 ## Configuration
 
-Config files live in `config/` on the host and survive container rebuilds. Most fields are editable live in Settings without restart.
+Config files live in `config/` — on the host (Docker) or next to `Job_App.exe` (Windows). They survive container rebuilds and exe updates. Most fields are editable live in Settings without restart.
 
 ### `config_v2.json`
 
@@ -77,12 +87,16 @@ Press `Ctrl+\` in the browser. Commands accept partial job IDs (last 8 chars). T
 
 ## Updating
 
+**Docker:**
+
 ```bash
 cd ~/Job-App
 bash update.sh
 ```
 
 Pulls the latest pre-built image from GitHub Container Registry (~30 seconds). Database and config survive. The UI shows a notice when a newer version is available.
+
+**Windows exe:** download the newest `Job_App-<version>-win64.zip` from [Releases](https://github.com/Meisdy/Job-App/releases/latest) and replace `Job_App.exe`. Keep your existing `data/` and `config/api_keys.json` — your database and key survive.
 
 ## Logs
 
@@ -97,6 +111,8 @@ This tool scrapes jobs.ch. Use it responsibly and at your own risk. The authors 
 
 ## Uninstall
 
+**Docker:**
+
 ```bash
 cd ~/Job-App
 docker compose down          # stop and remove container
@@ -106,3 +122,5 @@ docker compose down --rmi all
 cd ~
 rm -rf ~/Job-App
 ```
+
+**Windows exe:** delete the unzipped folder. Nothing is installed system-wide.

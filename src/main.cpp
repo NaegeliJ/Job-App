@@ -1,4 +1,9 @@
 #define _WIN32_WINNT 0x0A00
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+#include <shellapi.h>
+#endif
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -249,7 +254,7 @@ static std::vector<std::string> findAllCaptures(const std::string& text, const s
 static std::string parseLinkedInPubDate(const std::string& html) {
     std::time_t now = std::time(nullptr);
     std::tm tm = {};
-#ifdef _MSC_VER
+#ifdef _WIN32
     localtime_s(&tm, &now);
 #else
     localtime_r(&now, &tm);
@@ -605,12 +610,16 @@ std::string cleanTemplateText(const std::string& raw) {
 
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
-int main() {
+int main(int argc, char* argv[]) {
     curl_global_init(CURL_GLOBAL_ALL);
 
-    fs::path root = fs::current_path();
-    std::string folder_name = root.filename().string();
-    if (folder_name.rfind("cmake-build-", 0) == 0) { // cmake-build-* = CLion output dir, step up
+    fs::path root;
+    try {
+        root = fs::canonical(argv[0]).parent_path();
+    } catch (...) {
+        root = fs::current_path();
+    }
+    if (root.filename().string().rfind("cmake-build-", 0) == 0) { // CLion output dir, step up
         root = root.parent_path();
     }
     base_dir = root.string();
@@ -629,6 +638,8 @@ int main() {
     }
 
     sqlite3* db;
+    std::error_code ec;
+    fs::create_directories(base_dir + "/data", ec);  // sqlite creates the file, not the dir
     if (sqlite3_open((base_dir + "/data/jobs_v2.db").c_str(), &db) != SQLITE_OK) {
         std::cerr << "Cannot open database v2: " << sqlite3_errmsg(db) << std::endl;
         return 1;
@@ -1668,7 +1679,7 @@ then trigger a profile refresh to update the narrative.*
             if (job.pub_date.empty()) {
                 std::time_t now = std::time(nullptr);
                 std::tm tm_buf{};
-#ifdef _MSC_VER
+#ifdef _WIN32
                 localtime_s(&tm_buf, &now);
 #else
                 localtime_r(&now, &tm_buf);
@@ -1881,8 +1892,14 @@ then trigger a profile refresh to update the narrative.*
 
     // ── END V2 API ─────────────────────────────────────────────────────────────
 
+#ifdef _WIN32
+    ShellExecuteA(nullptr, "open", "http://localhost:8080", nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    system("xdg-open http://localhost:8080 2>/dev/null &");
+#endif
+
     for (int attempt = 1; attempt <= 5; ++attempt) {
-        std::cout << "Server running on http://0.0.0.0:8080" << std::endl;
+        std::cout << "Server running on http://localhost:8080" << std::endl;
         if (server.listen("0.0.0.0", 8080)) break;
         std::cerr << "listen() failed (attempt " << attempt << "/5), retrying in 2s..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(2));
