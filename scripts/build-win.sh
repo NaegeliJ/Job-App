@@ -37,9 +37,13 @@ if [ ! -f "${CURL_DIR}/lib/libcurl.a" ]; then
     echo "curl ${CURL_VER} ready at ${CURL_DIR}"
 fi
 
+# APP_VERSION: from arg, else env, else "dev"
+APP_VERSION="${1:-${APP_VERSION:-dev}}"
+
 cmake -B build-win \
     -DCMAKE_TOOLCHAIN_FILE=mingw-toolchain.cmake \
-    -DCURL_WIN_DIR="$(pwd)/${CURL_DIR}"
+    -DCURL_WIN_DIR="$(pwd)/${CURL_DIR}" \
+    -DAPP_VERSION="${APP_VERSION}"
 cmake --build build-win --parallel
 
 echo ""

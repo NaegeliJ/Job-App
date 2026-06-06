@@ -631,6 +631,8 @@ int main(int argc, char* argv[]) {
     }
 
     sqlite3* db;
+    std::error_code ec;
+    fs::create_directories(base_dir + "/data", ec);  // sqlite creates the file, not the dir
     if (sqlite3_open((base_dir + "/data/jobs_v2.db").c_str(), &db) != SQLITE_OK) {
         std::cerr << "Cannot open database v2: " << sqlite3_errmsg(db) << std::endl;
         return 1;
