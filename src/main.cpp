@@ -1,4 +1,7 @@
 #define _WIN32_WINNT 0x0A00
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -598,12 +601,16 @@ std::string cleanTemplateText(const std::string& raw) {
 
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
-int main() {
+int main(int argc, char* argv[]) {
     curl_global_init(CURL_GLOBAL_ALL);
 
-    fs::path root = fs::current_path();
-    std::string folder_name = root.filename().string();
-    if (folder_name.rfind("cmake-build-", 0) == 0) { // cmake-build-* = CLion output dir, step up
+    fs::path root;
+    try {
+        root = fs::canonical(argv[0]).parent_path();
+    } catch (...) {
+        root = fs::current_path();
+    }
+    if (root.filename().string().rfind("cmake-build-", 0) == 0) { // CLion output dir, step up
         root = root.parent_path();
     }
     base_dir = root.string();
@@ -1869,8 +1876,14 @@ then trigger a profile refresh to update the narrative.*
 
     // ── END V2 API ─────────────────────────────────────────────────────────────
 
+#ifdef _WIN32
+    ShellExecuteA(nullptr, "open", "http://localhost:8080", nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    system("xdg-open http://localhost:8080 2>/dev/null &");
+#endif
+
     for (int attempt = 1; attempt <= 5; ++attempt) {
-        std::cout << "Server running on http://0.0.0.0:8080" << std::endl;
+        std::cout << "Server running on http://localhost:8080" << std::endl;
         if (server.listen("0.0.0.0", 8080)) break;
         std::cerr << "listen() failed (attempt " << attempt << "/5), retrying in 2s..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(2));

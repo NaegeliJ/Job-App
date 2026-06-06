@@ -11,4 +11,10 @@ add_compile_definitions(APP_VERSION="${APP_VERSION}")
 add_executable(Job_App src/main.cpp src/sqlite3.c src/db.cpp)
 
 target_include_directories(Job_App PRIVATE include/)
-target_link_libraries(Job_App curl)
+
+if(WIN32)
+    target_link_libraries(Job_App curl ws2_32 wldap32 crypt32)
+    target_link_options(Job_App PRIVATE -static-libgcc -static-libstdc++)
+else()
+    target_link_libraries(Job_App curl)
+endif()
