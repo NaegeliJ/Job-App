@@ -36,8 +36,9 @@ if(WIN32)
         "${CURL_WIN_DIR}/lib/libzstd.a"
         "${CURL_WIN_DIR}/lib/libz.a"
         ws2_32 wldap32 crypt32 secur32 bcrypt iphlpapi
+        /usr/x86_64-w64-mingw32/lib/libwinpthread.a
     )
-    target_link_options(Job_App PRIVATE -static-libgcc -static-libstdc++)
+    target_link_options(Job_App PRIVATE -static)
 else()
     target_link_libraries(Job_App curl)
 endif()
