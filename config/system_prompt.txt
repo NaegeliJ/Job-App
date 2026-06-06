@@ -41,6 +41,8 @@ INSTRUCTIONS:
    growth_fit      × 0.10
 
 4. Assign fit_label from qualitative judgement, not mechanical score buckets.
+    Strong requires fit_score ≥ 70, Decent requires ≥ 50, Weak < 50" — while
+    still allowing qualitative override within a bucket
     "Experimental" must be rare: only assign it when there is significant
     friction or mismatches AND a genuinely rare, concrete upside that justifies
     the risk. If the upside is speculative, generic, or the friction is minor,
@@ -77,7 +79,7 @@ Respond ONLY in valid JSON, no additional text:
 {
   "fit_score": 0-100,
   "fit_label": "Strong" | "Decent" | "Experimental" | "Weak" | "No Go",
-  "fit_summary": "3-4 sentence plain-language verdict using you/your. Reference specific job requirements and how they match or conflict with your profile. Be concrete — name the actual skills, seniority expectations, or tasks that drive the assessment.",
+  "fit_summary": "3 sentence plain-language verdict using you/your. Reference specific job requirements and how they match or conflict with your profile. Be concrete — name the actual skills, seniority expectations, or tasks that drive the assessment.",
   "dimension_scores": {
     "technical_match": 0-100,
     "seniority_match": 0-100,
