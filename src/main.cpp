@@ -152,14 +152,14 @@ std::string httpRequest(const std::string& url, const std::string& method,
     return response;
 }
 
-std::string httpGet(const std::string& url) {
+std::string httpGet(const std::string& url, long* out_status = nullptr) {
     return httpRequest(url, "GET", {
         "Accept: application/json",
         "Origin: https://www.jobs.ch",
         "Referer: https://www.jobs.ch/",
         "X-Node-Request: false",
         "X-Source: jobs_ch_desktop"
-    });
+    }, "", 120L, out_status);
 }
 
 // For detail fetch (guest API — low profile, purpose-built endpoint)
@@ -895,8 +895,16 @@ int main(int argc, char* argv[]) {
                     if (!is_linkedin) {
                         // jobs.ch detail
                         rateLimitSleep();
-                        json detail = json::parse(httpGet(
-                            "https://www.jobs.ch/api/v1/public/search/job/" + urlEncode(job.job_id)));
+                        long status = 0;
+                        std::string body = httpGet(
+                            "https://www.jobs.ch/api/v1/public/search/job/" + urlEncode(job.job_id), &status);
+                        if (status != 200) {
+                            std::cerr << "[DETAIL] " << job.job_id << " HTTP " << status
+                                      << " — skipping" << std::endl;
+                            failed++;
+                            continue;
+                        }
+                        json detail = json::parse(body);
                         updated_job = job_from_json(detail);
                         updated_job.job_id = job.job_id;
                         updated_job.source = "jobs_ch";
