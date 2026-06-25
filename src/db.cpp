@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
 #include "../include/db.h"
 
 namespace {
