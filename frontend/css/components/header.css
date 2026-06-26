@@ -136,6 +136,7 @@ header {
   letter-spacing:0.02em;
   white-space:nowrap;
   flex-shrink:0;
+  line-height:1;
 }
 .tool-btn:hover {
   color:var(--text);
@@ -145,6 +146,8 @@ header {
 #scrape-btn:hover     { border-color:var(--green); }
 #import-job-btn:hover { border-color:var(--yellow); }
 #fitcheck-btn:hover   { border-color:var(--purple); }
+
+.bulk-delete-wrap { display: flex; align-items: center; }
 
 .bulk-delete-menu {
   display:none;
