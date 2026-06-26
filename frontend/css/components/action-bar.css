@@ -80,8 +80,18 @@
 
 /* Tool button variants */
 .rescore-btn:hover, .rescore-btn.running { border-color: rgba(251, 191, 36, 0.45); color: var(--yellow); background: var(--yellow-dim); }
+.scrape-btn { position: relative; overflow: hidden; }
 .scrape-btn:hover  { border-color: var(--green); }
-.scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: var(--green-dim); }
+.scrape-btn.running { border-color: rgba(52, 211, 153, 0.45); color: var(--green); background: transparent; }
+.scrape-btn.running::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: calc(var(--scrape-progress, 0) * 1%);
+  background: var(--green-dim);
+  transition: width 0.8s ease;
+  pointer-events: none;
+}
 .fitcheck-btn { position: relative; overflow: hidden; }
 .fitcheck-btn:hover  { border-color: var(--purple); }
 .fitcheck-btn.error  { border-color: rgba(248, 113, 113, 0.45); color: var(--red); }

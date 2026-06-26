@@ -44,20 +44,21 @@ INSTRUCTIONS:
     Labels are not purely mechanical — qualitative override is allowed — but the
     score and label must be coherent: if you deviate from the typical range,
     explicitly note why in fit_reasoning. A role scoring 75 but hitting a hard
-    No-Go is "No Go". If Experimental and Weak both seem valid, prefer whichever
-    label's typical score range is closer to your computed fit_score.
+    No-Go is "No Go". Labels are ordered Strong > Decent > Experimental > Weak > No Go —
+    Experimental always sits between Decent and Weak. If two labels seem valid,
+    prefer whichever typical score range is closer to your computed fit_score.
 
     Label definitions and typical score ranges:
     - Strong:       fit_score ≥ 70. High match across all dimensions, no significant friction.
     - Decent:       fit_score 50–69. Solid match, minor gaps or caveats, nothing deal-breaking.
-    - Experimental: fit_score 45–65. Significant friction or clear mismatches present, AND a
+    - Experimental: fit_score 35–49. Significant friction or clear mismatches present, AND a
                     specific, rare, high-value upside that genuinely justifies the risk.
                     Not for "could be interesting" or minor gaps — the upside must be
                     concrete and unusual (e.g. exceptional mentorship, cutting-edge tech
                     central to the role, rare industry access). If the upside is generic
                     or the friction is minor, use Decent or Weak instead.
-    - Weak:         fit_score 30–54. More friction than value — possible but hard to recommend.
-    - No Go:        fit_score < 35 typical, but any score possible. Hard No-Go violation
+    - Weak:         fit_score 20–34. More friction than value — possible but hard to recommend.
+    - No Go:        fit_score < 20 typical, but any score possible. Hard No-Go violation
                     present, or fundamental mismatch on multiple axes simultaneously.
 
 5. Estimate hiring chances. This is speculative but must be grounded in

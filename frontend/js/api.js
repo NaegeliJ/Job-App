@@ -2,6 +2,7 @@ const GET_URL              = '/api/jobs';
 const UPDATE_URL           = '/api/jobs/update';
 const SCRAPE_URL           = '/api/scrape/jobs';
 const DETAILS_URL          = '/api/scrape/details';
+const DETAILS_PROGRESS_URL = '/api/scrape/details/progress';
 const CONFIG_URL           = '/api/config';
 const PROFILE_GET_URL      = '/api/profile';
 const PROFILE_SAVE_URL     = '/api/profile/save';
@@ -15,6 +16,7 @@ export {
   UPDATE_URL,
   SCRAPE_URL,
   DETAILS_URL,
+  DETAILS_PROGRESS_URL,
   CONFIG_URL,
   PROFILE_GET_URL,
   PROFILE_SAVE_URL,

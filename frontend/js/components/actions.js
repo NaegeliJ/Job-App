@@ -1,5 +1,5 @@
 import state from '../state.js';
-import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, FITCHECK_URL, FITCHECK_PROGRESS_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
+import { GET_URL, UPDATE_URL, SCRAPE_URL, DETAILS_URL, DETAILS_PROGRESS_URL, FITCHECK_URL, FITCHECK_PROGRESS_URL, IMPORT_TEXT_URL, PROFILE_GET_URL, PROFILE_SAVE_URL } from '../api.js';
 import { renderDetail } from './detail.js';
 import { renderList } from './job-list.js';
 import { updateStats, setConnectionStatus } from './header.js';
@@ -222,11 +222,31 @@ export async function scrapeJobs() {
     scrapedCount = scrapeData.count;
 
     if (scrapedCount > 0) {
-      button.innerHTML = '<span class="spin">⟳</span> Fetching details...';
+      button.style.setProperty('--scrape-progress', 0);
+      button.innerHTML = '<span class="spin">⟳</span> Fetching details... 0%';
+
       const detailsRes = await fetch(DETAILS_URL, { method: 'POST' });
       const detailsData = await detailsRes.json();
       if (!detailsRes.ok) throw new Error(detailsData.error || 'Details fetch failed');
-      showToast(`Scraped ${scrapedCount} jobs, fetched details for ${detailsData.updated}`);
+
+      await new Promise(resolve => {
+        const pollInterval = setInterval(async () => {
+          try {
+            const res = await fetch(DETAILS_PROGRESS_URL);
+            const data = await res.json();
+            if (data.total > 0) {
+              const pct = Math.min(100, Math.round((data.done / data.total) * 100));
+              button.style.setProperty('--scrape-progress', pct);
+              button.innerHTML = `<span class="spin">⟳</span> Fetching details... ${pct}%`;
+            }
+            if (!data.running) { clearInterval(pollInterval); resolve(); }
+          } catch (_) {}
+        }, 1000);
+      });
+
+      button.style.removeProperty('--scrape-progress');
+
+      showToast(`Scraped ${scrapedCount} jobs, fetched details`);
     } else {
       showToast('No new jobs found');
     }
@@ -254,8 +274,9 @@ export async function triggerFitCheck() {
       const res = await fetch(FITCHECK_PROGRESS_URL);
       const data = await res.json();
       if (data.total > 0) {
-        const pct = Math.round((data.done / data.total) * 100);
+        const pct = Math.min(100, Math.round((data.done / data.total) * 100));
         button.style.setProperty('--fitcheck-progress', pct);
+        button.innerHTML = `<span class="spin">⟳</span> Analyzing... ${pct}%`;
       }
       if (!data.running) clearInterval(pollInterval);
     } catch (_) {}

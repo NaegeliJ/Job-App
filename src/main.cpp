@@ -80,8 +80,8 @@ std::string urlEncode(const std::string& str) {
     std::string encoded;
     for (unsigned char c : str) {
         // RFC 3986: Unreserved characters: A-Z a-z 0-9 - _ . ~
-        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || 
-            (c >= '0' && c <= '9') || c == '-' || c == '_' || 
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' ||
             c == '.' || c == '~') {
             encoded += c;
         } else {
@@ -632,7 +632,7 @@ int main(int argc, char* argv[]) {
         std::ifstream f(base_dir + "/config/api_keys.json");
         json keys = json::parse(f);
         api_key = keys.value("api_key", "");
-        std::cout << "API keys loaded" << std::endl;
+        std::cout << "[INFO] API keys loaded" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[WARN] Could not load API keys: " << e.what() << std::endl;
     }
@@ -641,10 +641,10 @@ int main(int argc, char* argv[]) {
     std::error_code ec;
     fs::create_directories(base_dir + "/data", ec);  // sqlite creates the file, not the dir
     if (sqlite3_open((base_dir + "/data/jobs_v2.db").c_str(), &db) != SQLITE_OK) {
-        std::cerr << "Cannot open database v2: " << sqlite3_errmsg(db) << std::endl;
+        std::cerr << "[Error] Cannot open database v2: " << sqlite3_errmsg(db) << std::endl;
         return 1;
     }
-    std::cout << "Database v2 opened" << std::endl;
+    std::cout << "[INFO] Database v2 opened" << std::endl;
     db_init(db);
     db_v2_init(db);
     std::mutex db_write_mutex;
@@ -658,11 +658,18 @@ int main(int argc, char* argv[]) {
         std::atomic<int>  failed{0};
     } fitcheck_progress;
 
+    struct {
+        std::atomic<bool> running{false};
+        std::atomic<int>  done{0};
+        std::atomic<int>  total{0};
+        std::atomic<int>  failed{0};
+    } detail_progress;
+
     ConfigV2 config_v2;
     std::shared_mutex config_v2_mutex;
     try {
         config_v2 = loadConfigV2();
-        std::cout << "Config v2 loaded" << std::endl;
+        std::cout << "[INFO] Config v2 loaded" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[WARN] Could not load config_v2.json: " << e.what() << std::endl;
     }
@@ -681,7 +688,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "[ERROR] " << systemPromptPath() << " missing {{profile}} or {{jobText}} placeholders" << std::endl;
             return 1;
         }
-        std::cout << "System prompt loaded" << std::endl;
+        std::cout << "[INFO] System prompt loaded" << std::endl;
     }
 
     // ── SERVER ───────────────────────────────────────────────────────────────
@@ -871,7 +878,7 @@ int main(int argc, char* argv[]) {
         res.set_content(json{{"ok", true}, {"count", inserted}}.dump(), "application/json");
     });
 
-    server.Post("/api/scrape/details", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/scrape/details", [&db, &db_write_mutex, &detail_progress](const httplib::Request&, httplib::Response& res) {
         std::vector<Job> jobs;
         {
             std::lock_guard<std::mutex> lock(db_write_mutex);
@@ -880,14 +887,19 @@ int main(int argc, char* argv[]) {
         int total = static_cast<int>(jobs.size());
         std::cout << "[INFO] Launching background detail fetch for " << total << " jobs" << std::endl;
 
-        std::thread([jobs = std::move(jobs), &db, &db_write_mutex]() {
+        detail_progress.done    = 0;
+        detail_progress.failed  = 0;
+        detail_progress.total   = total;
+        detail_progress.running = true;
+
+        std::thread([jobs = std::move(jobs), &db, &db_write_mutex, &detail_progress]() {
             int updated = 0, failed = 0;
             bool li_blocked = false;
 
             for (const auto& job : jobs) {
                 const bool is_linkedin = (job.source == "linkedin");
 
-                if (is_linkedin && li_blocked) continue;
+                if (is_linkedin && li_blocked) { detail_progress.done++; continue; }
 
                 try {
                     Job updated_job;
@@ -898,10 +910,26 @@ int main(int argc, char* argv[]) {
                         long status = 0;
                         std::string body = httpGet(
                             "https://www.jobs.ch/api/v1/public/search/job/" + urlEncode(job.job_id), &status);
+
+                        if (status == 404 || status == 410) {
+                            std::cerr << "[DETAIL] " << job.job_id << " HTTP " << status
+                                      << " — skipping" << std::endl;
+                            {
+                                std::lock_guard<std::mutex> lock(db_write_mutex);
+                                delete_job(db, job.job_id);
+                            }
+                            failed++;
+                            detail_progress.failed++;
+                            detail_progress.done++;
+                            continue;
+                        }
+
                         if (status != 200) {
                             std::cerr << "[DETAIL] " << job.job_id << " HTTP " << status
                                       << " — skipping" << std::endl;
                             failed++;
+                            detail_progress.failed++;
+                            detail_progress.done++;
                             continue;
                         }
                         json detail = json::parse(body);
@@ -925,18 +953,28 @@ int main(int argc, char* argv[]) {
                         }
                         if (status == 404) {
                             std::cerr << "[LI] 404 on detail " << job.job_id << " — job expired, skipping" << std::endl;
+                            {
+                                std::lock_guard<std::mutex> lock(db_write_mutex);
+                                delete_job(db, job.job_id);
+                            }
                             failed++;
+                            detail_progress.failed++;
+                            detail_progress.done++;
                             continue;
                         }
                         if (status == 999 || status == 429 || (status != 200 && status != 0)) {
                             std::cerr << "[LI] HTTP " << status << " on detail " << job.job_id << " — stopping LinkedIn detail fetches" << std::endl;
                             li_blocked = true;
                             failed++;
+                            detail_progress.failed++;
+                            detail_progress.done++;
                             continue;
                         }
                         if (html.empty()) {
                             std::cerr << "[LI] Empty response for detail " << job.job_id << std::endl;
                             failed++;
+                            detail_progress.failed++;
+                            detail_progress.done++;
                             continue;
                         }
 
@@ -972,17 +1010,30 @@ int main(int argc, char* argv[]) {
                         update_job_details(db, updated_job);
                     }
                     updated++;
+                    detail_progress.done++;
                     std::cout << "[DETAIL] " << job.job_id << " updated" << std::endl;
 
                 } catch (const std::exception& e) {
                     std::cerr << "[DETAIL] Failed for " << job.job_id << ": " << e.what() << std::endl;
                     failed++;
+                    detail_progress.failed++;
+                    detail_progress.done++;
                 }
             }
+            detail_progress.running = false;
             std::cout << "[INFO] Background detail fetch done: " << updated << " updated, " << failed << " failed" << std::endl;
         }).detach();
 
         res.set_content(json{{"ok", true}, {"status", "background"}, {"count", total}}.dump(), "application/json");
+    });
+
+    server.Get("/api/scrape/details/progress", [&detail_progress](const httplib::Request&, httplib::Response& res) {
+        res.set_content(json{
+            {"running", detail_progress.running.load()},
+            {"done",    detail_progress.done.load()},
+            {"total",   detail_progress.total.load()},
+            {"failed",  detail_progress.failed.load()}
+        }.dump(), "application/json");
     });
 
     server.Get("/api/config", [](const httplib::Request&, httplib::Response& res) {
@@ -1181,13 +1232,13 @@ int main(int argc, char* argv[]) {
     server.Post("/api/onboarding/complete", [&api_key, &snapshotAiConfig, &extractBlock, &parseStreamingResponse](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
-            
+
             if (!body.contains("answers") || !body["answers"].is_array() || body["answers"].size() != 9) {
                 res.status = 400;
                 res.set_content(json{{"error", "Expected 9 answers"}}.dump(), "application/json");
                 return;
             }
-            
+
             if (api_key.empty() && snapshotAiConfig().provider != "ollama_local") {
                 res.status = 500;
                 res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1195,7 +1246,7 @@ int main(int argc, char* argv[]) {
             }
 
             const auto& answers = body["answers"];
-            
+
             std::string questions[] = {
                 "CV Drop",
                 "Career Goal (3–5 Years)",
@@ -1207,14 +1258,14 @@ int main(int argc, char* argv[]) {
                 "Work Style",
                 "What Should the LLM Know That's Not in the CV?"
             };
-            
+
             std::string fullProfile = "Candidate Onboarding Answers:\n\n";
             for (int i = 0; i < 9; i++) {
                 fullProfile += "Q" + std::to_string(i+1) + ": " + questions[i] + "\n";
                 std::string answerVal = answers[i].is_string() ? answers[i].get<std::string>() : answers[i].dump();
                 fullProfile += "A" + std::to_string(i+1) + ": " + answerVal + "\n\n";
             }
-            
+
             std::string prompt = R"(Generate a comprehensive user profile in markdown format from the candidate answers below.
 
 TEMPLATE STRUCTURE TO FOLLOW:
@@ -1279,9 +1330,9 @@ Version: [HASH]
 
 ---
 
-*This profile is used by the AI to assess job fit. Edit any section above, 
+*This profile is used by the AI to assess job fit. Edit any section above,
 then trigger a profile refresh to update the narrative.*
-)"; 
+)";
 
             prompt += fullProfile;
 
@@ -1304,9 +1355,9 @@ then trigger a profile refresh to update the narrative.*
             if (accumulatedResponse.empty()) {
                 throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
             }
-            
+
             std::string markdownContent = extractBlock(accumulatedResponse, "markdown");
-            
+
             std::string markdownPath = base_dir + "/config/user_profile.md";
             std::ofstream outfile(markdownPath);
             if (!outfile.is_open()) {
@@ -1314,9 +1365,9 @@ then trigger a profile refresh to update the narrative.*
             }
             outfile << markdownContent;
             outfile.close();
-            
+
             res.set_content(json{{"ok", true}}.dump(), "application/json");
-            
+
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string(e.what())}}.dump(), "application/json");
@@ -1326,17 +1377,17 @@ then trigger a profile refresh to update the narrative.*
     server.Get("/api/profile", [](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
-        
+
         if (!file.is_open()) {
             res.status = 404;
             res.set_content(json{{"error", "No profile found"}}.dump(), "application/json");
             return;
         }
-        
+
         std::string content((std::istreambuf_iterator<char>(file)),
                           std::istreambuf_iterator<char>());
         file.close();
-        
+
         res.set_content(content, "text/markdown");
         res.set_header("Content-Type", "text/markdown");
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -1355,10 +1406,10 @@ then trigger a profile refresh to update the narrative.*
             if (!file.is_open()) {
                 throw std::runtime_error("Failed to open file: " + markdownPath);
             }
-            
+
             file << content;
             file.close();
-            
+
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -1369,17 +1420,17 @@ then trigger a profile refresh to update the narrative.*
     server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
-        
+
         if (!file.is_open()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
             return;
         }
-        
+
         std::string content((std::istreambuf_iterator<char>(file)),
                             std::istreambuf_iterator<char>());
         file.close();
-        
+
         auto ai = snapshotAiConfig();
         int fitcheck_limit;
         { std::shared_lock<std::shared_mutex> lock(config_v2_mutex); fitcheck_limit = config_v2.fitcheck_limit; }
@@ -1478,7 +1529,7 @@ then trigger a profile refresh to update the narrative.*
     server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
-        
+
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
         if (!file.is_open()) {
@@ -1486,11 +1537,11 @@ then trigger a profile refresh to update the narrative.*
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
             return;
         }
-        
+
         std::string profileContent((std::istreambuf_iterator<char>(file)),
                                    std::istreambuf_iterator<char>());
         file.close();
-        
+
         std::optional<std::string> template_text;
         {
             std::lock_guard<std::mutex> lock(db_write_mutex);
@@ -1526,18 +1577,18 @@ then trigger a profile refresh to update the narrative.*
 
             std::string api_response = httpPostAI(ai.endpoint,
                                                 api_key, request.dump());
-            
+
             std::cout << "[DEBUG] API response length: " << api_response.length() << std::endl;
-            
+
             std::string accumulatedResponse = parseStreamingResponse(api_response);
-            
+
             std::cout << "[DEBUG] Accumulated response length: " << accumulatedResponse.length() << std::endl;
             if (accumulatedResponse.empty()) {
                 res.status = 500;
                 res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
                 return;
             }
-            
+
             json fit_data;
             try {
                 fit_data = extractJsonFromResponse(accumulatedResponse);
@@ -1546,7 +1597,7 @@ then trigger a profile refresh to update the narrative.*
                 res.set_content(json{{"error", "Failed to parse AI response", "raw_response", accumulatedResponse}}.dump(), "application/json");
                 return;
             }
-            
+
             {
                 std::lock_guard<std::mutex> lock(db_write_mutex);
                 save_fit_result_v2(db, job_id,
@@ -1556,9 +1607,9 @@ then trigger a profile refresh to update the narrative.*
                                    fit_data.value("fit_reasoning", ""),
                                    "md_profile");
             }
-            
+
             res.set_content(fit_data.dump(), "application/json");
-            
+
         } catch (const FatalAiError& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
@@ -1907,14 +1958,14 @@ then trigger a profile refresh to update the narrative.*
 #endif
 
     for (int attempt = 1; attempt <= 5; ++attempt) {
-        std::cout << "Server running on http://localhost:8080" << std::endl;
+        std::cout << "[INFO] Server running on http://localhost:8080" << std::endl;
         if (server.listen("0.0.0.0", 8080)) break;
-        std::cerr << "listen() failed (attempt " << attempt << "/5), retrying in 2s..." << std::endl;
+        std::cerr << "[WARNING] listen() failed (attempt " << attempt << "/5), retrying in 2s..." << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
     sqlite3_close(db);
-    
+
     curl_global_cleanup();
-    
+
     return 0;
 }
