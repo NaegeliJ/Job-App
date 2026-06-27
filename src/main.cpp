@@ -94,15 +94,9 @@ std::string urlEncode(const std::string& str) {
     return encoded;
 }
 
-void rateLimitSleep() {
+void rateLimitSleep(const int& min_ms = 750, const int& max_ms = 1500) {
     thread_local std::mt19937 rng(std::random_device{}());
-    thread_local std::uniform_int_distribution<int> dist(800, 1499);
-    std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
-}
-
-static void rateLimitSleepLinkedIn() {
-    thread_local std::mt19937 rng(std::random_device{}());
-    thread_local std::uniform_int_distribution<int> dist(1500, 3000);
+    thread_local std::uniform_int_distribution<int> dist(min_ms, max_ms);
     std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
 }
 
@@ -437,7 +431,7 @@ static std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg) {
             + "&f_TPR=" + urlEncode(cfg.linkedin_time_range)
             + "&position=1&pageNum=0";
 
-        rateLimitSleepLinkedIn();
+        rateLimitSleep(1500, 3000);
         long status = 0;
         std::string html = httpGetLinkedInPublic(url, &status);
 
@@ -717,6 +711,13 @@ static FitcheckResult runFitcheck(const std::string& cleaned_text, const std::st
     };
 }
 
+static std::string loadProfileMarkdown() {
+    std::ifstream file(base_dir + "/config/user_profile.md");
+    if (!file.is_open()) return "";
+    return std::string((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+}
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
@@ -948,7 +949,7 @@ int main(int argc, char* argv[]) {
             try {
                 json searchData = json::parse(httpGet(url));
                 auto documents  = searchData["documents"];
-                std::cout << "Query: " << q << " - " << documents.size() << " results" << std::endl;
+                std::cout << "[INFO] Query: " << q << " - " << documents.size() << " results" << std::endl;
 
                 for (auto& doc : documents) {
                     std::lock_guard<std::mutex> lock(db_write_mutex);
@@ -1051,7 +1052,7 @@ int main(int argc, char* argv[]) {
                         std::string li_id = job.job_id.substr(3);
                         std::string url   = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/" + li_id;
 
-                        rateLimitSleepLinkedIn();
+                        rateLimitSleep(1500, 3000);
                         long status = 0;
                         std::string html = httpGetLinkedIn(url, &status);
 
@@ -1241,18 +1242,6 @@ int main(int argc, char* argv[]) {
             res.set_content(json{{"error", e.what()}}.dump(), "application/json");
         }
     });
-
-    // ── V2 SHARED HELPERS ──────────────────────────────────────────────────────
-
-    auto loadProfileMarkdown = []() -> std::string {
-        std::string markdownPath = base_dir + "/config/user_profile.md";
-        std::ifstream file(markdownPath);
-        if (!file.is_open()) return "";
-        std::string content((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
-        file.close();
-        return content;
-    };
 
     // ── V2 API ENDPOINTS ───────────────────────────────────────────────────────
 
@@ -1445,18 +1434,12 @@ then trigger a profile refresh to update the narrative.*
     });
 
     server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
-        std::string markdownPath = base_dir + "/config/user_profile.md";
-        std::ifstream file(markdownPath);
-
-        if (!file.is_open()) {
+        std::string content = loadProfileMarkdown();
+        if (content.empty()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
             return;
         }
-
-        std::string content((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
-        file.close();
 
         auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
         int fitcheck_limit;
@@ -1541,17 +1524,12 @@ then trigger a profile refresh to update the narrative.*
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
-        std::string markdownPath = base_dir + "/config/user_profile.md";
-        std::ifstream file(markdownPath);
-        if (!file.is_open()) {
+        std::string profileContent = loadProfileMarkdown();
+        if (profileContent.empty()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
             return;
         }
-
-        std::string profileContent((std::istreambuf_iterator<char>(file)),
-                                   std::istreambuf_iterator<char>());
-        file.close();
 
         std::optional<std::string> template_text;
         {
@@ -1610,7 +1588,7 @@ then trigger a profile refresh to update the narrative.*
     };
 
     server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
-        &loadProfileMarkdown, &generateManualJobId, &system_prompt_template]
+        &generateManualJobId, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
@@ -1831,7 +1809,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
-        &loadProfileMarkdown, &system_prompt_template]
+        &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Admin recheck triggered for job: " << job_id << std::endl;
