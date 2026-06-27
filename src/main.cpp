@@ -615,6 +615,108 @@ AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
              cfg.temperature, cfg.top_p };
 }
 
+// ── FIT-CHECK HELPERS ────────────────────────────────────────────────────────
+
+struct FitcheckResult {
+    int score;
+    std::string label, summary, reasoning;
+};
+
+static std::string extractBlock(const std::string& raw, const std::string& lang) {
+    std::string content = raw;
+    std::string open = "```" + lang;
+    size_t start = content.find(open);
+    if (start != std::string::npos) {
+        content = content.substr(start + open.size());
+        size_t end = content.find("```");
+        if (end != std::string::npos) content = content.substr(0, end);
+    } else {
+        start = content.find("```");
+        if (start != std::string::npos) {
+            content = content.substr(start + 3);
+            size_t end = content.find("```");
+            if (end != std::string::npos) content = content.substr(0, end);
+        }
+    }
+    while (!content.empty() && std::isspace(content.front())) content = content.substr(1);
+    while (!content.empty() && std::isspace(content.back())) content.pop_back();
+    return content;
+}
+
+static std::string parseStreamingResponse(const std::string& raw) {
+    std::istringstream stream(raw);
+    std::string line, accumulated;
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        // Strip SSE prefix if present ("data: {...}")
+        if (line.rfind("data: ", 0) == 0) line = line.substr(6);
+        if (line == "[DONE]") break;
+        try {
+            json chunk = json::parse(line);
+            // Ollama native NDJSON: {"message": {"content": "..."}}
+            if (chunk.contains("message") && chunk["message"].contains("content"))
+                accumulated += chunk["message"]["content"].get<std::string>();
+            // OpenAI-compatible SSE: {"choices": [{"delta": {"content": "..."}}]}
+            else if (chunk.contains("choices") && chunk["choices"].is_array() && !chunk["choices"].empty()) {
+                const auto& delta = chunk["choices"][0];
+                if (delta.contains("delta") && delta["delta"].contains("content"))
+                    accumulated += delta["delta"]["content"].get<std::string>();
+                else if (delta.contains("message") && delta["message"].contains("content"))
+                    accumulated += delta["message"]["content"].get<std::string>();
+            }
+            if (chunk.contains("done") && chunk["done"].get<bool>()) break;
+        } catch (...) {}
+    }
+    if (accumulated.empty() && !raw.empty()) {
+        std::cerr << "[WARN] parseStreamingResponse: no content extracted. Raw (first 500 chars):\n"
+                  << raw.substr(0, std::min(raw.size(), size_t(500))) << std::endl;
+    }
+    return accumulated;
+}
+
+static json extractJsonFromResponse(const std::string& raw) {
+    std::string content = extractBlock(raw, "json");
+    try {
+        return json::parse(content);
+    } catch (...) {
+        size_t obj_start = content.find("{");
+        size_t obj_end = content.rfind("}");
+        if (obj_start != std::string::npos && obj_end != std::string::npos && obj_end > obj_start)
+            return json::parse(content.substr(obj_start, obj_end - obj_start + 1));
+        throw std::runtime_error("No valid JSON found in response");
+    }
+}
+
+static std::string buildFitcheckPrompt(const std::string& system_prompt_template,
+                                        const std::string& profile, const std::string& job_text) {
+    std::string result = system_prompt_template;
+    size_t pos;
+    while ((pos = result.find("{{profile}}")) != std::string::npos)
+        result.replace(pos, 11, profile);
+    while ((pos = result.find("{{jobText}}")) != std::string::npos)
+        result.replace(pos, 11, job_text);
+    return result;
+}
+
+static FitcheckResult runFitcheck(const std::string& cleaned_text, const std::string& profile,
+                                   const std::string& system_prompt_template, const AiSnapshot& ai,
+                                   const std::string& api_key) {
+    std::string prompt = buildFitcheckPrompt(system_prompt_template, profile, cleaned_text);
+    json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
+                                  ai.temperature, ai.top_p, ai.top_k);
+    std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
+    std::string accumulated = parseStreamingResponse(response);
+    if (accumulated.empty())
+        throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
+    json fit_data = extractJsonFromResponse(accumulated);
+    return {
+        fit_data.value("fit_score", 0),
+        fit_data.value("fit_label", "Unknown"),
+        fit_data.value("fit_summary", ""),
+        fit_data.value("fit_reasoning", "")
+    };
+}
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
@@ -1152,84 +1254,9 @@ int main(int argc, char* argv[]) {
         return content;
     };
 
-    auto buildFitcheckPrompt = [&system_prompt_template](const std::string& profile, const std::string& jobText) -> std::string {
-        std::string result = system_prompt_template;
-        size_t pos;
-        while ((pos = result.find("{{profile}}")) != std::string::npos)
-            result.replace(pos, 11, profile);
-        while ((pos = result.find("{{jobText}}")) != std::string::npos)
-            result.replace(pos, 11, jobText);
-        return result;
-    };
-
-    auto parseStreamingResponse = [](const std::string& raw) -> std::string {
-        std::istringstream stream(raw);
-        std::string line, accumulated;
-        while (std::getline(stream, line)) {
-            if (line.empty()) continue;
-            // Strip SSE prefix if present ("data: {...}")
-            if (line.rfind("data: ", 0) == 0) line = line.substr(6);
-            if (line == "[DONE]") break;
-            try {
-                json chunk = json::parse(line);
-                // Ollama native NDJSON: {"message": {"content": "..."}}
-                if (chunk.contains("message") && chunk["message"].contains("content"))
-                    accumulated += chunk["message"]["content"].get<std::string>();
-                // OpenAI-compatible SSE: {"choices": [{"delta": {"content": "..."}}]}
-                else if (chunk.contains("choices") && chunk["choices"].is_array() && !chunk["choices"].empty()) {
-                    const auto& delta = chunk["choices"][0];
-                    if (delta.contains("delta") && delta["delta"].contains("content"))
-                        accumulated += delta["delta"]["content"].get<std::string>();
-                    else if (delta.contains("message") && delta["message"].contains("content"))
-                        accumulated += delta["message"]["content"].get<std::string>();
-                }
-                if (chunk.contains("done") && chunk["done"].get<bool>()) break;
-            } catch (...) {}
-        }
-        if (accumulated.empty() && !raw.empty()) {
-            std::cerr << "[WARN] parseStreamingResponse: no content extracted. Raw (first 500 chars):\n"
-                      << raw.substr(0, std::min(raw.size(), size_t(500))) << std::endl;
-        }
-        return accumulated;
-    };
-
-    auto extractBlock = [](const std::string& raw, const std::string& lang) -> std::string {
-        std::string content = raw;
-        std::string open = "```" + lang;
-        size_t start = content.find(open);
-        if (start != std::string::npos) {
-            content = content.substr(start + open.size());
-            size_t end = content.find("```");
-            if (end != std::string::npos) content = content.substr(0, end);
-        } else {
-            start = content.find("```");
-            if (start != std::string::npos) {
-                content = content.substr(start + 3);
-                size_t end = content.find("```");
-                if (end != std::string::npos) content = content.substr(0, end);
-            }
-        }
-        while (!content.empty() && std::isspace(content.front())) content = content.substr(1);
-        while (!content.empty() && std::isspace(content.back())) content.pop_back();
-        return content;
-    };
-
-    auto extractJsonFromResponse = [&](const std::string& raw) -> json {
-        std::string content = extractBlock(raw, "json");
-        try {
-            return json::parse(content);
-        } catch (...) {
-            size_t objStart = content.find("{");
-            size_t objEnd = content.rfind("}");
-            if (objStart != std::string::npos && objEnd != std::string::npos && objEnd > objStart)
-                return json::parse(content.substr(objStart, objEnd - objStart + 1));
-            throw std::runtime_error("No valid JSON found in response");
-        }
-    };
-
     // ── V2 API ENDPOINTS ───────────────────────────────────────────────────────
 
-    server.Post("/api/onboarding/complete", [&api_key, &config_v2, &config_v2_mutex, &extractBlock, &parseStreamingResponse](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/onboarding/complete", [&api_key, &config_v2, &config_v2_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
 
@@ -1417,7 +1444,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
 
@@ -1457,39 +1484,23 @@ then trigger a profile refresh to update the narrative.*
         int checked = 0, failed = 0;
         try {
             for (auto& job : jobs) {
+                std::string cleaned = cleanTemplateText(job.template_text);
+                if (cleaned.empty()) {
+                    std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+                    failed++;
+                    fitcheck_progress.failed++;
+                    fitcheck_progress.done++;
+                    continue;
+                }
                 try {
-                    std::string cleaned = cleanTemplateText(job.template_text);
-                    if (cleaned.empty()) {
-                        std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
-                        failed++;
-                        fitcheck_progress.failed++;
-                        fitcheck_progress.done++;
-                        continue;
-                    }
-
-                    std::string prompt = buildFitcheckPrompt(content, cleaned);
-
-                    json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
-                                                  ai.temperature, ai.top_p, ai.top_k);
-
-                    std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
-
-                    std::string accumulated = parseStreamingResponse(response);
-                    if (accumulated.empty()) throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
-                    json fit_data = extractJsonFromResponse(accumulated);
+                    auto result = runFitcheck(cleaned, content, system_prompt_template, ai, api_key);
                     {
                         std::lock_guard<std::mutex> lock(db_write_mutex);
-                        save_fit_result_v2(db, job.job_id,
-                                           fit_data.value("fit_score", 0),
-                                           fit_data.value("fit_label", "Unknown"),
-                                           fit_data.value("fit_summary", ""),
-                                           fit_data.value("fit_reasoning", ""),
-                                           "md_file_profile");
+                        save_fit_result_v2(db, job.job_id, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
                     }
                     checked++;
                     fitcheck_progress.done++;
                     std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
-
                 } catch (const FatalAiError& e) {
                     if (e.code() == "invalid_api_key" || e.code() == "no_credits")
                         throw;
@@ -1526,7 +1537,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     // POST /api/jobs/:id/fitcheck — Re-check fit for a single job
-    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
@@ -1554,62 +1565,32 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
+        std::string cleaned = cleanTemplateText(*template_text);
+        if (cleaned.empty()) {
+            res.status = 400;
+            res.set_content(json{{"error", "Job has no description text"}}.dump(), "application/json");
+            return;
+        }
+
+        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
+        if (api_key.empty() && ai.provider != "ollama_local") {
+            res.status = 500;
+            res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
+            return;
+        }
+
         try {
-            std::string cleaned = cleanTemplateText(*template_text);
-            if (cleaned.empty()) {
-                res.status = 400;
-                res.set_content(json{{"error", "Job has no description text"}}.dump(), "application/json");
-                return;
-            }
-
-            std::string prompt = buildFitcheckPrompt(profileContent, cleaned);
-
-            auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-
-            if (api_key.empty() && ai.provider != "ollama_local") {
-                res.status = 500;
-                res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
-                return;
-            }
-
-            json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
-                                          ai.temperature, ai.top_p, ai.top_k);
-
-            std::string api_response = httpPostAI(ai.endpoint,
-                                                api_key, request.dump());
-
-            std::cout << "[DEBUG] API response length: " << api_response.length() << std::endl;
-
-            std::string accumulatedResponse = parseStreamingResponse(api_response);
-
-            std::cout << "[DEBUG] Accumulated response length: " << accumulatedResponse.length() << std::endl;
-            if (accumulatedResponse.empty()) {
-                res.status = 500;
-                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
-                return;
-            }
-
-            json fit_data;
-            try {
-                fit_data = extractJsonFromResponse(accumulatedResponse);
-            } catch (const std::exception& e) {
-                res.status = 500;
-                res.set_content(json{{"error", "Failed to parse AI response", "raw_response", accumulatedResponse}}.dump(), "application/json");
-                return;
-            }
-
+            auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
             {
                 std::lock_guard<std::mutex> lock(db_write_mutex);
-                save_fit_result_v2(db, job_id,
-                                   fit_data.value("fit_score", 0),
-                                   fit_data.value("fit_label", "Unknown"),
-                                   fit_data.value("fit_summary", ""),
-                                   fit_data.value("fit_reasoning", ""),
-                                   "md_profile");
+                save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "md_profile");
             }
-
-            res.set_content(fit_data.dump(), "application/json");
-
+            res.set_content(json{
+                {"fit_score",     result.score},
+                {"fit_label",     result.label},
+                {"fit_summary",   result.summary},
+                {"fit_reasoning", result.reasoning}
+            }.dump(), "application/json");
         } catch (const FatalAiError& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
@@ -1629,7 +1610,7 @@ then trigger a profile refresh to update the narrative.*
     };
 
     server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
-        &loadProfileMarkdown, &generateManualJobId, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
+        &loadProfileMarkdown, &generateManualJobId, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
@@ -1763,29 +1744,13 @@ then trigger a profile refresh to update the narrative.*
                 std::cout << "[INFO] Import: running fit-check for " << jobId << "..." << std::endl;
                 std::string cleaned = cleanTemplateText(job.template_text);
                 if (!cleaned.empty()) {
-                    std::string fitPrompt = buildFitcheckPrompt(profileContent, cleaned);
-                    json fitRequest = buildAiRequest(ai.provider, ai.model, fitPrompt, ai.max_tokens,
-                                                    ai.temperature, ai.top_p, ai.top_k);
-
-                    std::string fitResponse = httpPostAI(ai.endpoint, api_key, fitRequest.dump());
-                    std::string fitAccumulated = parseStreamingResponse(fitResponse);
-                    if (!fitAccumulated.empty()) {
-                        try {
-                            json fitData = extractJsonFromResponse(fitAccumulated);
-                            std::lock_guard<std::mutex> lock(db_write_mutex);
-                            save_fit_result_v2(db, jobId,
-                                fitData.value("fit_score", 0),
-                                fitData.value("fit_label", "Unknown"),
-                                fitData.value("fit_summary", ""),
-                                fitData.value("fit_reasoning", ""),
-                                "md_file_profile");
-                            std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << fitData.value("fit_label", "?") << " (" << fitData.value("fit_score", 0) << ")" << std::endl;
-                        } catch (const std::exception& e2) {
-                            std::cerr << "[WARN] Import: fit-check JSON parse failed for " << jobId << ": " << e2.what() << std::endl;
-                            std::cerr << "[DEBUG] Fit-check raw (first 500): " << fitAccumulated.substr(0, 500) << std::endl;
-                        }
-                    } else {
-                        std::cerr << "[WARN] Import: fit-check returned empty for " << jobId << std::endl;
+                    try {
+                        auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
+                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        save_fit_result_v2(db, jobId, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
+                        std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << result.label << " (" << result.score << ")" << std::endl;
+                    } catch (const std::exception& e2) {
+                        std::cerr << "[WARN] Import: fit-check failed for " << jobId << ": " << e2.what() << std::endl;
                     }
                 }
             }
@@ -1866,7 +1831,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
-        &loadProfileMarkdown, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
+        &loadProfileMarkdown, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Admin recheck triggered for job: " << job_id << std::endl;
@@ -1902,42 +1867,27 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
+        std::string cleaned = cleanTemplateText(*templateText);
+        if (cleaned.empty()) {
+            res.status = 400;
+            res.set_content(json{{"error", "Job has no description text"}}.dump(), "application/json");
+            return;
+        }
+
         try {
-            std::string cleaned = cleanTemplateText(*templateText);
-            std::string prompt = buildFitcheckPrompt(profile, cleaned);
-
-            json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
-                                          ai.temperature, ai.top_p, ai.top_k);
-
-            std::string apiResponse = httpPostAI(ai.endpoint, api_key, request.dump());
-            std::string accumulated = parseStreamingResponse(apiResponse);
-
-            if (accumulated.empty()) {
-                res.status = 500;
-                res.set_content(json{{"error", "Empty parsed response from AI (httpPostAI succeeded but parse failed)"}}.dump(), "application/json");
-                return;
-            }
-
-            json fitData = extractJsonFromResponse(accumulated);
-
+            auto result = runFitcheck(cleaned, profile, system_prompt_template, ai, api_key);
             {
                 std::lock_guard<std::mutex> lock(db_write_mutex);
-                save_fit_result_v2(db, job_id,
-                                   fitData.value("fit_score", 0),
-                                   fitData.value("fit_label", "Unknown"),
-                                   fitData.value("fit_summary", ""),
-                                   fitData.value("fit_reasoning", ""),
-                                   "admin_recheck");
+                save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "admin_recheck");
             }
-
-            res.set_content(json{{"ok", true}, {"fit_score", fitData.value("fit_score", 0)}, {"fit_label", fitData.value("fit_label", "Unknown")}}.dump(), "application/json");
+            res.set_content(json{{"ok", true}, {"fit_score", result.score}, {"fit_label", result.label}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string("Recheck failed: ") + e.what()}}.dump(), "application/json");
         }
     });
 
-    server.Post("/api/admin/fitcheck/recheck", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/admin/fitcheck/recheck",[&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
         std::cout << "[INFO] Admin batch recheck triggered (clear all)" << std::endl;
         try {
             std::lock_guard<std::mutex> lock(db_write_mutex);
