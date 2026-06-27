@@ -5,6 +5,7 @@ build/
 .github/
 .idea/
 .claude/
+.clangd
 
 # User data — never bake into image
 data/
