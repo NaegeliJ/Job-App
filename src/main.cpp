@@ -40,7 +40,6 @@ private:
     std::string error_code_;
 };
 
-// Returns {error_code, message} for fatal AI errors, or {"",""} for per-job errors.
 static std::pair<std::string,std::string> classifyAiError(long http_status, const std::string& body) {
     if (http_status == 429) return {"rate_limit",      "Rate limit reached (HTTP 429)"};
     if (http_status == 402) return {"no_credits",      "Insufficient API credits (HTTP 402)"};
@@ -71,6 +70,7 @@ struct AiSnapshot {
 
 static const std::string& configPath() { return s_config_path; }
 static const std::string& systemPromptPath() { return s_system_prompt_path; }
+static std::string profilePath() { return base_dir + "/config/user_profile.md"; }
 
 // ── HTTP HELPERS ─────────────────────────────────────────────────────────────
 
@@ -159,7 +159,6 @@ std::string httpGet(const std::string& url, long* out_status = nullptr) {
     }, "", 120L, out_status);
 }
 
-// For detail fetch (guest API — low profile, purpose-built endpoint)
 static std::string httpGetLinkedIn(const std::string& url, long* out_status = nullptr) {
     return httpRequest(url, "GET", {
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -169,7 +168,6 @@ static std::string httpGetLinkedIn(const std::string& url, long* out_status = nu
     }, "", 30L, out_status);
 }
 
-// For job list search (public page — more results, same HTML structure)
 static std::string httpGetLinkedInPublic(const std::string& url, long* out_status = nullptr) {
     return httpRequest(url, "GET", {
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -355,19 +353,16 @@ json buildAiRequest(const std::string& provider, const std::string& model, const
 // ── CONFIG ───────────────────────────────────────────────────────────────────
 
 struct ConfigV2 {
-    // Scraping
     bool                     scrape_enabled{true};
     std::vector<std::string> scrape_queries;
     int                      scrape_rows{};
 
-    // LinkedIn
     bool                     linkedin_enabled{false};
     std::vector<std::string> linkedin_queries;
     std::string              linkedin_location{"Switzerland"};
     std::string              linkedin_time_range{"r604800"};
     int                      linkedin_max_results{25};
 
-    // Fit-check
     std::string              provider{"ollama_local"};
     int                      fitcheck_limit{};
     std::string              model{};
@@ -476,37 +471,37 @@ static std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg) {
 
 // ── JSON / JOB HELPERS ───────────────────────────────────────────────────────
 
-json job_record_to_json(const JobRecord& job) {
-    json job_json;
-    job_json["job_id"]              = job.job_id;
-    job_json["title"]               = job.title;
-    job_json["company_name"]        = job.company_name;
-    job_json["place"]               = job.place;
-    job_json["zipcode"]             = job.zipcode;
-    job_json["canton_code"]         = job.canton_code;
-    job_json["employment_grade"]    = job.employment_grade;
-    job_json["application_url"]     = job.application_url;
-    job_json["user_status"]         = job.user_status;
-    job_json["rating"]              = job.rating;
-    job_json["notes"]               = job.notes;
-    job_json["availability_status"] = job.availability_status;
-    job_json["detail_url"]          = job.detail_url;
-    job_json["pub_date"]            = job.pub_date;
-    job_json["end_date"]            = job.end_date;
-    job_json["template_text"]       = job.template_text;
+json jobRecordToJson(const JobRecord& job) {
+    json jobJson;
+    jobJson["job_id"]              = job.job_id;
+    jobJson["title"]               = job.title;
+    jobJson["company_name"]        = job.company_name;
+    jobJson["place"]               = job.place;
+    jobJson["zipcode"]             = job.zipcode;
+    jobJson["canton_code"]         = job.canton_code;
+    jobJson["employment_grade"]    = job.employment_grade;
+    jobJson["application_url"]     = job.application_url;
+    jobJson["user_status"]         = job.user_status;
+    jobJson["rating"]              = job.rating;
+    jobJson["notes"]               = job.notes;
+    jobJson["availability_status"] = job.availability_status;
+    jobJson["detail_url"]          = job.detail_url;
+    jobJson["pub_date"]            = job.pub_date;
+    jobJson["end_date"]            = job.end_date;
+    jobJson["template_text"]       = job.template_text;
 
-    job_json["fit_score"]           = job.fit_score;
-    job_json["fit_label"]           = job.fit_label;
-    job_json["fit_summary"]         = job.fit_summary;
-    job_json["fit_reasoning"]       = job.fit_reasoning;
-    job_json["fit_checked_at"]      = job.fit_checked_at;
-    job_json["fit_profile_hash"]    = job.fit_profile_hash;
-    job_json["source"]              = job.source.empty() ? "jobs_ch" : job.source;
+    jobJson["fit_score"]           = job.fit_score;
+    jobJson["fit_label"]           = job.fit_label;
+    jobJson["fit_summary"]         = job.fit_summary;
+    jobJson["fit_reasoning"]       = job.fit_reasoning;
+    jobJson["fit_checked_at"]      = job.fit_checked_at;
+    jobJson["fit_profile_hash"]    = job.fit_profile_hash;
+    jobJson["source"]              = job.source.empty() ? "jobs_ch" : job.source;
 
-    return job_json;
+    return jobJson;
 }
 
-Job job_from_json(const json& data) {
+Job jobFromJson(const json& data) {
     auto str = [](const json& j, const std::string& key, const std::string& def = "") -> std::string {
         auto it = j.find(key);
         if (it == j.end() || it->is_null()) return def;
@@ -645,7 +640,7 @@ static std::string parseStreamingResponse(const std::string& raw) {
         } catch (...) {}
     }
     if (accumulated.empty() && !raw.empty()) {
-        std::cerr << "[WARN] parseStreamingResponse: no content extracted. Raw (first 500 chars):\n"
+        std::cerr << "[WARN] parseStreamingResponse: no content jobFields. Raw (first 500 chars):\n"
                   << raw.substr(0, std::min(raw.size(), size_t(500))) << std::endl;
     }
     return accumulated;
@@ -685,17 +680,17 @@ static FitcheckResult runFitcheck(const std::string& cleaned_text, const std::st
     std::string accumulated = parseStreamingResponse(response);
     if (accumulated.empty())
         throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
-    json fit_data = extractJsonFromResponse(accumulated);
+    json fitData = extractJsonFromResponse(accumulated);
     return {
-        fit_data.value("fit_score", 0),
-        fit_data.value("fit_label", "Unknown"),
-        fit_data.value("fit_summary", ""),
-        fit_data.value("fit_reasoning", "")
+        fitData.value("fit_score", 0),
+        fitData.value("fit_label", "Unknown"),
+        fitData.value("fit_summary", ""),
+        fitData.value("fit_reasoning", "")
     };
 }
 
 static std::string loadProfileMarkdown() {
-    std::ifstream file(base_dir + "/config/user_profile.md");
+    std::ifstream file(profilePath());
     if (!file.is_open()) return "";
     return std::string((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
@@ -800,7 +795,7 @@ int main(int argc, char* argv[]) {
     server.Get("/api/jobs", [&db](const httplib::Request&, httplib::Response& res) {
         json result = json::array();
         for (const auto& job : get_all_jobs(db))
-            result.push_back(job_record_to_json(job));
+            result.push_back(jobRecordToJson(job));
         res.set_content(result.dump(), "application/json");
     });
 
@@ -916,13 +911,13 @@ int main(int argc, char* argv[]) {
         std::vector<std::string> queries;
         int rows;
         bool jobsch_enabled;
-        ConfigV2 li_cfg;
+        ConfigV2 linkedInConfig;
         {
             std::shared_lock<std::shared_mutex> lock(config_v2_mutex);
             jobsch_enabled = config_v2.scrape_enabled;
             queries        = config_v2.scrape_queries;
             rows           = config_v2.scrape_rows;
-            li_cfg         = config_v2;
+            linkedInConfig         = config_v2;
         }
 
         if (jobsch_enabled) for (const auto& q : queries) {
@@ -936,7 +931,7 @@ int main(int argc, char* argv[]) {
 
                 for (auto& doc : documents) {
                     std::lock_guard<std::mutex> lock(db_write_mutex);
-                    insert_or_update_job(db, job_from_json(doc));
+                    insert_or_update_job(db, jobFromJson(doc));
                     inserted++;
                 }
                 {
@@ -952,16 +947,16 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (li_cfg.linkedin_enabled) {
+        if (linkedInConfig.linkedin_enabled) {
             std::cout << "[LI] Starting LinkedIn scrape" << std::endl;
             try {
-                auto li_jobs = scrapeLinkedIn(li_cfg);
-                for (auto& job : li_jobs) {
+                auto linkedInJobs = scrapeLinkedIn(linkedInConfig);
+                for (auto& job : linkedInJobs) {
                     std::lock_guard<std::mutex> lock(db_write_mutex);
                     insert_or_update_job(db, job);
                     inserted++;
                 }
-                std::cout << "[LI] Inserted " << li_jobs.size() << " LinkedIn jobs" << std::endl;
+                std::cout << "[LI] Inserted " << linkedInJobs.size() << " LinkedIn jobs" << std::endl;
             } catch (const std::exception& e) {
                 std::cerr << "[LI] Scrape error: " << e.what() << std::endl;
             }
@@ -987,12 +982,12 @@ int main(int argc, char* argv[]) {
 
         std::thread([jobs = std::move(jobs), &db, &db_write_mutex, &detail_progress]() {
             int updated = 0, failed = 0;
-            bool li_blocked = false;
+            bool linkedInBlocked = false;
 
             for (const auto& job : jobs) {
                 const bool is_linkedin = (job.source == "linkedin");
 
-                if (is_linkedin && li_blocked) { detail_progress.done++; continue; }
+                if (is_linkedin && linkedInBlocked) { detail_progress.done++; continue; }
 
                 try {
                     Job updated_job;
@@ -1026,14 +1021,14 @@ int main(int argc, char* argv[]) {
                             continue;
                         }
                         json detail = json::parse(body);
-                        updated_job = job_from_json(detail);
+                        updated_job = jobFromJson(detail);
                         updated_job.job_id = job.job_id;
                         updated_job.source = "jobs_ch";
 
                     } else {
                         // LinkedIn detail — strip "li_" prefix for the API URL
-                        std::string li_id = job.job_id.substr(3);
-                        std::string url   = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/" + li_id;
+                        std::string linkedInId = job.job_id.substr(3);
+                        std::string url   = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/" + linkedInId;
 
                         rateLimitSleep(1500, 3000);
                         long status = 0;
@@ -1057,7 +1052,7 @@ int main(int argc, char* argv[]) {
                         }
                         if (status == 999 || status == 429 || (status != 200 && status != 0)) {
                             std::cerr << "[LI] HTTP " << status << " on detail " << job.job_id << " — stopping LinkedIn detail fetches" << std::endl;
-                            li_blocked = true;
+                            linkedInBlocked = true;
                             failed++;
                             detail_progress.failed++;
                             detail_progress.done++;
@@ -1073,27 +1068,22 @@ int main(int argc, char* argv[]) {
 
                         updated_job = job; // carry over existing fields
 
-                        // title
                         {
                             std::string v = extractTagContent(html, "top-card-layout__title", "</h1>");
                             if (!v.empty()) updated_job.title = cleanHtmlField(v);
                         }
-                        // company
                         {
                             std::string v = extractTagContent(html, "topcard__org-name-link", "</a>");
                             if (!v.empty()) updated_job.company_name = cleanHtmlField(v);
                         }
-                        // description (try primary selector, fall back)
                         {
                             std::string v = extractTagContent(html, "show-more-less-html__markup", "</div>");
                             if (v.empty())
                                 v = extractTagContent(html, "description__text", "</div>");
                             if (!v.empty())
-                                updated_job.template_text = v;  // store raw HTML; frontend + AI clean on use
+                                updated_job.template_text = v;
                         }
-                        // pub_date
                         updated_job.pub_date = parseLinkedInPubDate(html);
-                        // employment_grade
                         updated_job.employment_grade = parseLinkedInEmploymentGrade(html);
                         updated_job.source = "linkedin";
                     }
@@ -1179,46 +1169,46 @@ int main(int argc, char* argv[]) {
         try {
             json body = json::parse(req.body);
 
-            std::string new_provider = body.value("provider", "");
-            std::string new_endpoint = body.value("endpoint", "");
-            std::string new_model    = body.value("model", "");
-            std::string new_key      = body.value("api_key", "");
+            std::string provider = body.value("provider", "");
+            std::string endpoint = body.value("endpoint", "");
+            std::string model    = body.value("model", "");
+            std::string apiKey   = body.value("api_key", "");
 
-            if (new_provider.empty()) throw std::runtime_error("provider required");
-            if (new_endpoint.empty()) throw std::runtime_error("endpoint required");
-            if (new_model.empty())    throw std::runtime_error("model required");
+            if (provider.empty()) throw std::runtime_error("provider required");
+            if (endpoint.empty()) throw std::runtime_error("endpoint required");
+            if (model.empty())    throw std::runtime_error("model required");
 
             // Write api_keys.json: always for ollama_local (key should be empty), only if non-empty for others
-            if (new_provider == "ollama_local" || !new_key.empty()) {
-                std::ofstream kf(base_dir + "/config/api_keys.json");
-                if (!kf.is_open()) throw std::runtime_error("Could not write api_keys.json");
-                kf << json{{"api_key", new_key}}.dump(2);
+            if (provider == "ollama_local" || !apiKey.empty()) {
+                std::ofstream keyFile(base_dir + "/config/api_keys.json");
+                if (!keyFile.is_open()) throw std::runtime_error("Could not write api_keys.json");
+                keyFile << json{{"api_key", apiKey}}.dump(2);
             }
 
-            json cfg_json;
+            json configJson;
             {
                 std::ifstream f(configPath());
                 if (!f.is_open()) throw std::runtime_error("Could not read config_v2.json");
-                cfg_json = json::parse(f);
+                configJson = json::parse(f);
             }
-            cfg_json["fitcheck"]["provider"] = new_provider;
-            cfg_json["fitcheck"]["endpoint"] = new_endpoint;
-            cfg_json["fitcheck"]["model"]    = new_model;
+            configJson["fitcheck"]["provider"] = provider;
+            configJson["fitcheck"]["endpoint"] = endpoint;
+            configJson["fitcheck"]["model"]    = model;
             {
                 std::ofstream f(configPath());
                 if (!f.is_open()) throw std::runtime_error("Could not write config_v2.json");
-                f << cfg_json.dump(2);
+                f << configJson.dump(2);
             }
             {
                 std::unique_lock<std::shared_mutex> cfglock(config_v2_mutex);
                 config_v2 = loadConfigV2();
             }
-            if (new_provider == "ollama_local" || !new_key.empty()) {
+            if (provider == "ollama_local" || !apiKey.empty()) {
                 std::lock_guard<std::mutex> keylock(api_key_mutex);
-                api_key = new_key;
+                api_key = apiKey;
             }
 
-            std::cout << "[INFO] AI config updated: provider=" << new_provider << " model=" << new_model << std::endl;
+            std::cout << "[INFO] AI config updated: provider=" << provider << " model=" << model << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -1261,11 +1251,11 @@ int main(int argc, char* argv[]) {
                 "What Should the LLM Know That's Not in the CV?"
             };
 
-            std::string fullProfile = "Candidate Onboarding Answers:\n\n";
+            std::string profileText = "Candidate Onboarding Answers:\n\n";
             for (int i = 0; i < 9; i++) {
-                fullProfile += "Q" + std::to_string(i+1) + ": " + questions[i] + "\n";
-                std::string answerVal = answers[i].is_string() ? answers[i].get<std::string>() : answers[i].dump();
-                fullProfile += "A" + std::to_string(i+1) + ": " + answerVal + "\n\n";
+                profileText += "Q" + std::to_string(i+1) + ": " + questions[i] + "\n";
+                std::string answer = answers[i].is_string() ? answers[i].get<std::string>() : answers[i].dump();
+                profileText += "A" + std::to_string(i+1) + ": " + answer + "\n\n";
             }
 
             std::string prompt = R"(Generate a comprehensive user profile in markdown format from the candidate answers below.
@@ -1336,7 +1326,7 @@ Version: [HASH]
 then trigger a profile refresh to update the narrative.*
 )";
 
-            prompt += fullProfile;
+            prompt += profileText;
 
             json request = {
                 {"model",       ai.model},
@@ -1350,21 +1340,17 @@ then trigger a profile refresh to update the narrative.*
             if (isOllamaLocal(ai.provider) && ai.top_k > 0) request["top_k"] = ai.top_k;
 
             std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
-            std::string accumulatedResponse = parseStreamingResponse(response);
+            std::string parsedResponse = parseStreamingResponse(response);
 
-            if (accumulatedResponse.empty()) {
+            if (parsedResponse.empty())
                 throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
-            }
 
-            std::string markdownContent = extractBlock(accumulatedResponse, "markdown");
+            std::string profileMarkdown = extractBlock(parsedResponse, "markdown");
 
-            std::string markdownPath = base_dir + "/config/user_profile.md";
-            std::ofstream outfile(markdownPath);
-            if (!outfile.is_open()) {
-                throw std::runtime_error("Failed to open file: " + markdownPath);
-            }
-            outfile << markdownContent;
-            outfile.close();
+            std::ofstream file(profilePath());
+            if (!file.is_open())
+                throw std::runtime_error("Failed to open profile file");
+            file << profileMarkdown;
 
             res.set_content(json{{"ok", true}}.dump(), "application/json");
 
@@ -1375,8 +1361,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     server.Get("/api/profile", [](const httplib::Request&, httplib::Response& res) {
-        std::string markdownPath = base_dir + "/config/user_profile.md";
-        std::ifstream file(markdownPath);
+        std::ifstream file(profilePath());
 
         if (!file.is_open()) {
             res.status = 404;
@@ -1401,11 +1386,9 @@ then trigger a profile refresh to update the narrative.*
             if (content.size() > 128 * 1024)
                 throw std::runtime_error("Profile too large (max 128 KB)");
 
-            std::string markdownPath = base_dir + "/config/user_profile.md";
-            std::ofstream file(markdownPath);
-            if (!file.is_open()) {
-                throw std::runtime_error("Failed to open file: " + markdownPath);
-            }
+            std::ofstream file(profilePath());
+            if (!file.is_open())
+                throw std::runtime_error("Failed to open profile file");
 
             file << content;
             file.close();
@@ -1504,7 +1487,6 @@ then trigger a profile refresh to update the narrative.*
         }.dump(), "application/json");
     });
 
-    // POST /api/jobs/:id/fitcheck — Re-check fit for a single job
     server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
@@ -1608,7 +1590,7 @@ then trigger a profile refresh to update the narrative.*
         std::cout << "[INFO] Import: generated job_id=" << jobId << " from " << text.size() << " chars" << std::endl;
 
         std::string truncated = text.substr(0, 8000);
-        std::string extractPrompt =
+        std::string extractionPrompt =
             "Extract structured data from the job posting text below. The text may have been copied from a Swiss job board "
             "(e.g. jobs.ch) where values appear BEFORE their labels on separate lines. Common label words to recognize:\n"
             "- 'Ort' = location/city (the value before it is the place, NOT company)\n"
@@ -1639,34 +1621,34 @@ then trigger a profile refresh to update the narrative.*
 
         try {
             std::cout << "[INFO] Import: calling AI to extract fields..." << std::endl;
-            json extractRequest = buildAiRequest(ai.provider, ai.model, extractPrompt, ai.max_tokens,
+            json extractionRequest = buildAiRequest(ai.provider, ai.model, extractionPrompt, ai.max_tokens,
                                                   0.3, ai.top_p, ai.top_k);
 
-            std::string extractResponse = httpPostAI(ai.endpoint, api_key, extractRequest.dump());
-            std::string accumulated = parseStreamingResponse(extractResponse);
+            std::string extractionResponse = httpPostAI(ai.endpoint, api_key, extractionRequest.dump());
+            std::string accumulated = parseStreamingResponse(extractionResponse);
             if (accumulated.empty()) throw std::runtime_error("Empty response from extraction AI");
             std::cout << "[INFO] Import: extraction AI responded (" << accumulated.size() << " chars)" << std::endl;
             std::cout << "[DEBUG] Import: extraction raw (first 500): " << accumulated.substr(0, 500) << std::endl;
 
-            json extracted;
+            json jobFields;
             try {
-                extracted = extractJsonFromResponse(accumulated);
+                jobFields = extractJsonFromResponse(accumulated);
             } catch (const std::exception& e) {
                 std::cerr << "[ERROR] Import: extraction JSON parse failed: " << e.what() << std::endl;
-                try { extracted = json::parse(accumulated); } catch (...) {
+                try { jobFields = json::parse(accumulated); } catch (...) {
                     throw std::runtime_error(std::string("Extraction parse failed: ") + e.what());
                 }
             }
 
             Job job;
             job.job_id           = jobId;
-            job.title            = extracted.value("title", "");
-            job.company_name     = extracted.value("company_name", "");
-            job.place            = extracted.value("place", "");
-            job.zipcode          = extracted.value("zipcode", "");
+            job.title            = jobFields.value("title", "");
+            job.company_name     = jobFields.value("company_name", "");
+            job.place            = jobFields.value("place", "");
+            job.zipcode          = jobFields.value("zipcode", "");
             job.canton_code      = "N/A";
             {
-                auto& eg = extracted["employment_grade"];
+                auto& eg = jobFields["employment_grade"];
                 if (eg.is_number()) {
                     job.employment_grade = eg.get<int>();
                 } else if (eg.is_string()) {
@@ -1677,9 +1659,9 @@ then trigger a profile refresh to update the narrative.*
                     job.employment_grade = 0;
                 }
             }
-            job.application_url  = extracted.value("application_url", "");
+            job.application_url  = jobFields.value("application_url", "");
             job.detail_url       = "";
-            job.pub_date         = extracted.value("pub_date", "");
+            job.pub_date         = jobFields.value("pub_date", "");
             if (job.pub_date.empty()) {
                 std::time_t now = std::time(nullptr);
                 std::tm tm_buf{};
@@ -1692,8 +1674,8 @@ then trigger a profile refresh to update the narrative.*
                 std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
                 job.pub_date = buf;
             }
-            job.end_date         = extracted.value("end_date", "");
-            std::string description = extracted.value("description", "");
+            job.end_date         = jobFields.value("end_date", "");
+            std::string description = jobFields.value("description", "");
             job.template_text    = description.empty() ? text : description;
 
             {
