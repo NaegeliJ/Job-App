@@ -608,6 +608,13 @@ std::string cleanTemplateText(const std::string& raw) {
     return collapsed;
 }
 
+AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
+    std::shared_lock<std::shared_mutex> lock(mtx);
+    return { cfg.provider, cfg.model, cfg.ai_endpoint,
+             cfg.max_tokens, cfg.top_k,
+             cfg.temperature, cfg.top_p };
+}
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
@@ -1062,7 +1069,7 @@ int main(int argc, char* argv[]) {
                 std::unique_lock<std::shared_mutex> lock(config_v2_mutex);
                 config_v2 = loadConfigV2();
             }
-            std::cout << "Config reloaded" << std::endl;
+            std::cout << "[INFO] Config reloaded" << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
             res.status = 400;
@@ -1145,13 +1152,6 @@ int main(int argc, char* argv[]) {
         return content;
     };
 
-    auto snapshotAiConfig = [&config_v2, &config_v2_mutex]() -> AiSnapshot {
-        std::shared_lock<std::shared_mutex> lock(config_v2_mutex);
-        return { config_v2.provider, config_v2.model, config_v2.ai_endpoint,
-                 config_v2.max_tokens, config_v2.top_k,
-                 config_v2.temperature, config_v2.top_p };
-    };
-
     auto buildFitcheckPrompt = [&system_prompt_template](const std::string& profile, const std::string& jobText) -> std::string {
         std::string result = system_prompt_template;
         size_t pos;
@@ -1229,7 +1229,7 @@ int main(int argc, char* argv[]) {
 
     // ── V2 API ENDPOINTS ───────────────────────────────────────────────────────
 
-    server.Post("/api/onboarding/complete", [&api_key, &snapshotAiConfig, &extractBlock, &parseStreamingResponse](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/onboarding/complete", [&api_key, &config_v2, &config_v2_mutex, &extractBlock, &parseStreamingResponse](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
 
@@ -1239,7 +1239,7 @@ int main(int argc, char* argv[]) {
                 return;
             }
 
-            if (api_key.empty() && snapshotAiConfig().provider != "ollama_local") {
+            if (api_key.empty() && snapshotAiConfig(config_v2, config_v2_mutex).provider != "ollama_local") {
                 res.status = 500;
                 res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
                 return;
@@ -1336,7 +1336,7 @@ then trigger a profile refresh to update the narrative.*
 
             prompt += fullProfile;
 
-            auto ai = snapshotAiConfig();
+            auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
 
             json request = {
                 {"model",       ai.model},
@@ -1417,7 +1417,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string markdownPath = base_dir + "/config/user_profile.md";
         std::ifstream file(markdownPath);
 
@@ -1431,7 +1431,7 @@ then trigger a profile refresh to update the narrative.*
                             std::istreambuf_iterator<char>());
         file.close();
 
-        auto ai = snapshotAiConfig();
+        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
         int fitcheck_limit;
         { std::shared_lock<std::shared_mutex> lock(config_v2_mutex); fitcheck_limit = config_v2.fitcheck_limit; }
 
@@ -1526,7 +1526,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     // POST /api/jobs/:id/fitcheck — Re-check fit for a single job
-    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &snapshotAiConfig, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
@@ -1564,7 +1564,7 @@ then trigger a profile refresh to update the narrative.*
 
             std::string prompt = buildFitcheckPrompt(profileContent, cleaned);
 
-            auto ai = snapshotAiConfig();
+            auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
 
             if (api_key.empty() && ai.provider != "ollama_local") {
                 res.status = 500;
@@ -1628,8 +1628,8 @@ then trigger a profile refresh to update the narrative.*
         return ss.str();
     };
 
-    server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db,
-        &snapshotAiConfig, &loadProfileMarkdown, &generateManualJobId, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
+    server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
+        &loadProfileMarkdown, &generateManualJobId, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
@@ -1651,7 +1651,7 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig();
+        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
 
         if (api_key.empty() && ai.provider != "ollama_local") {
             res.status = 500;
@@ -1865,8 +1865,8 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_write_mutex, &db,
-        &snapshotAiConfig, &loadProfileMarkdown, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
+    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
+        &loadProfileMarkdown, &buildFitcheckPrompt, &parseStreamingResponse, &extractJsonFromResponse]
     (const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Admin recheck triggered for job: " << job_id << std::endl;
@@ -1894,7 +1894,7 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig();
+        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
 
         if (api_key.empty() && ai.provider != "ollama_local") {
             res.status = 500;
