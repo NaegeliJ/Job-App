@@ -739,19 +739,14 @@ int main(int argc, char* argv[]) {
 
     std::mutex api_key_mutex;
 
-    struct FitcheckProgress {
+    struct ProgressTracker {
         std::atomic<bool> running{false};
         std::atomic<int>  done{0};
         std::atomic<int>  total{0};
         std::atomic<int>  failed{0};
-    } fitcheck_progress;
-
-    struct {
-        std::atomic<bool> running{false};
-        std::atomic<int>  done{0};
-        std::atomic<int>  total{0};
-        std::atomic<int>  failed{0};
-    } detail_progress;
+    };
+    ProgressTracker fitcheck_progress;
+    ProgressTracker detail_progress;
 
     ConfigV2 config_v2;
     std::shared_mutex config_v2_mutex;
