@@ -1,3 +1,5 @@
+#include <optional>
+#include <string>
 #define _WIN32_WINNT 0x0A00
 #ifdef _WIN32
 #include <winsock2.h>
@@ -66,6 +68,7 @@ struct AiSnapshot {
     int max_tokens, top_k;
     double temperature, top_p;
 };
+
 static const std::string& configPath() { return s_config_path; }
 static const std::string& systemPromptPath() { return s_system_prompt_path; }
 
@@ -566,11 +569,27 @@ std::string cleanTemplateText(const std::string& raw) {
     return collapsed;
 }
 
+// ── AI HELPERS ───────────────────────────────────────────────────────────────
+
+
 AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
     std::shared_lock<std::shared_mutex> lock(mtx);
     return { cfg.provider, cfg.model, cfg.ai_endpoint,
              cfg.max_tokens, cfg.top_k,
              cfg.temperature, cfg.top_p };
+}
+
+bool apiKeyReady(const std::string& api_key, const AiSnapshot& ai){
+    return !api_key.empty() || ai.provider == "ollama_local";
+}
+
+
+std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2& cfg, std::shared_mutex& mtx){
+    AiSnapshot ai_data = snapshotAiConfig(cfg, mtx);
+    if (apiKeyReady(api_key, ai_data)){
+        return ai_data;
+    }
+    return std::nullopt;
 }
 
 // ── FIT-CHECK HELPERS ────────────────────────────────────────────────────────
@@ -1219,11 +1238,14 @@ int main(int argc, char* argv[]) {
                 return;
             }
 
-            if (api_key.empty() && snapshotAiConfig(config_v2, config_v2_mutex).provider != "ollama_local") {
+            auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+            if (!ai_opt) {
                 res.status = 500;
                 res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
                 return;
             }
+
+            const AiSnapshot& ai = *ai_opt;
 
             const auto& answers = body["answers"];
 
@@ -1316,8 +1338,6 @@ then trigger a profile refresh to update the narrative.*
 
             prompt += fullProfile;
 
-            auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-
             json request = {
                 {"model",       ai.model},
                 {"messages",    json::array({{{"role", "user"}, {"content", prompt}}})},
@@ -1405,15 +1425,16 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-        int fitcheck_limit;
-        { std::shared_lock<std::shared_mutex> lock(config_v2_mutex); fitcheck_limit = config_v2.fitcheck_limit; }
-
-        if (api_key.empty() && ai.provider != "ollama_local") {
+        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
             return;
         }
+        const AiSnapshot& ai = *ai_opt;
+
+        int fitcheck_limit;
+        { std::shared_lock<std::shared_mutex> lock(config_v2_mutex); fitcheck_limit = config_v2.fitcheck_limit; }
 
         std::vector<JobRecord> jobs;
         {
@@ -1514,12 +1535,13 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-        if (api_key.empty() && ai.provider != "ollama_local") {
+        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
             return;
         }
+        const AiSnapshot& ai = *ai_opt;
 
         try {
             auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
@@ -1574,13 +1596,13 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-
-        if (api_key.empty() && ai.provider != "ollama_local") {
+        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
             return;
         }
+        const AiSnapshot& ai = *ai_opt;
 
         std::string jobId = generateManualJobId(text);
         std::cout << "[INFO] Import: generated job_id=" << jobId << " from " << text.size() << " chars" << std::endl;
@@ -1801,13 +1823,13 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai = snapshotAiConfig(config_v2, config_v2_mutex);
-
-        if (api_key.empty() && ai.provider != "ollama_local") {
+        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
             return;
         }
+        const AiSnapshot& ai = *ai_opt;
 
         std::string cleaned = cleanTemplateText(*templateText);
         if (cleaned.empty()) {
