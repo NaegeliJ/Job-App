@@ -94,9 +94,9 @@ std::string urlEncode(const std::string& str) {
     return encoded;
 }
 
-void rateLimitSleep(const int& min_ms = 750, const int& max_ms = 1500) {
+void rateLimitSleep(int min_ms = 750, int max_ms = 1500) {
     thread_local std::mt19937 rng(std::random_device{}());
-    thread_local std::uniform_int_distribution<int> dist(min_ms, max_ms);
+    std::uniform_int_distribution<int> dist(min_ms, max_ms);
     std::this_thread::sleep_for(std::chrono::milliseconds(dist(rng)));
 }
 
@@ -533,70 +533,34 @@ Job job_from_json(const json& data) {
 // ── TEMPLATE TEXT CLEANER ────────────────────────────────────────────────────
 
 std::string cleanTemplateText(const std::string& raw) {
-    // Step 1: Handle JSON-encoded string (unwrap if needed)
     std::string html;
     try {
         json parsed = json::parse(raw);
         html = parsed.is_string() ? parsed.get<std::string>() : parsed.dump();
-        // Strip extra quotes if present
-        if (html.size() > 2 && html.front() == '"' && html.back() == '"') {
+        if (html.size() > 2 && html.front() == '"' && html.back() == '"')
             html = html.substr(1, html.size() - 2);
-        }
     } catch (...) {
         html = raw;
     }
 
-    // Step 2: Strip HTML tags
-    std::string text;
-    bool inTag = false;
-    for (char c : html) {
-        if (c == '<') inTag = true;
-        else if (c == '>') inTag = false;
-        else if (!inTag) text += c;
-    }
+    std::string text = decodeHtmlEntities(stripHtmlTags(html));
 
-    // Step 3: Decode HTML entities
-    size_t pos = 0;
-    while ((pos = text.find("&amp;", pos)) != std::string::npos) {
-        text.replace(pos, 5, "&");
-    }
-    pos = 0;
-    while ((pos = text.find("&lt;", pos)) != std::string::npos) {
-        text.replace(pos, 4, "<");
-    }
-    pos = 0;
-    while ((pos = text.find("&gt;", pos)) != std::string::npos) {
-        text.replace(pos, 4, ">");
-    }
-    pos = 0;
-    while ((pos = text.find("&quot;", pos)) != std::string::npos) {
-        text.replace(pos, 6, "\"");
-    }
-
-    // Step 4: Collapse whitespace
     std::string collapsed;
     bool lastWasSpace = false;
     for (char c : text) {
         if (std::isspace(c)) {
-            if (!lastWasSpace) {
-                collapsed += ' ';
-                lastWasSpace = true;
-            }
+            if (!lastWasSpace) { collapsed += ' '; lastWasSpace = true; }
         } else {
-            collapsed += c;
-            lastWasSpace = false;
+            collapsed += c; lastWasSpace = false;
         }
     }
-    while (!collapsed.empty() && std::isspace(collapsed.back())) {
+    while (!collapsed.empty() && std::isspace(collapsed.back()))
         collapsed.pop_back();
-    }
 
-    // Step 5: Truncate to 8000 chars
     if (collapsed.size() > 8000) {
         collapsed = collapsed.substr(0, 8000);
-        while (!collapsed.empty() && (collapsed.back() & 0xC0) == 0x80) {
+        while (!collapsed.empty() && (collapsed.back() & 0xC0) == 0x80)
             collapsed.pop_back();
-        }
     }
 
     return collapsed;
