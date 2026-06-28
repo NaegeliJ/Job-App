@@ -88,7 +88,6 @@ std::string urlEncode(const std::string& str) {
             c == '.' || c == '~') {
             encoded += c;
         } else {
-            // Percent-encode all other characters
             char hex[4];
             snprintf(hex, sizeof(hex), "%%%02X", c);
             encoded += hex;
@@ -223,8 +222,7 @@ static std::string cleanHtmlField(const std::string& raw) {
     return collapseWhitespace(decodeHtmlEntities(stripHtmlTags(raw)));
 }
 
-// Find first occurrence of classMarker (e.g. `class="foo"`), skip to closing '>',
-// then return content up to endTag. Safe on large HTML — no regex backtracking.
+// Avoids regex to prevent catastrophic backtracking on large HTML blobs.
 static std::string extractTagContent(const std::string& html, const std::string& classMarker, const std::string& endTag) {
     size_t pos = html.find(classMarker);
     if (pos == std::string::npos) return "";
@@ -548,6 +546,7 @@ std::string cleanTemplateText(const std::string& raw) {
 
     if (collapsed.size() > 8000) {
         collapsed = collapsed.substr(0, 8000);
+        // Roll back to a UTF-8 character boundary — continuation bytes have the form 10xxxxxx.
         while (!collapsed.empty() && (collapsed.back() & 0xC0) == 0x80)
             collapsed.pop_back();
     }
@@ -631,7 +630,7 @@ static std::string parseStreamingResponse(const std::string& raw) {
         } catch (...) {}
     }
     if (accumulated.empty() && !raw.empty()) {
-        std::cerr << "[WARN] parseStreamingResponse: no content jobFields. Raw (first 500 chars):\n"
+        std::cerr << "[WARN] parseStreamingResponse: no content accumulated from non-empty raw response. Raw (first 500 chars):\n"
                   << raw.substr(0, std::min(raw.size(), size_t(500))) << std::endl;
     }
     return accumulated;
@@ -651,7 +650,7 @@ static json extractJsonFromResponse(const std::string& raw) {
 }
 
 
-static std::string generateManualJobId(const std::string& text){
+static std::string generateManualJobId(const std::string& text) {
     size_t hash = std::hash<std::string>{}(text.substr(0, 500));
     std::stringstream ss;
     ss << "m" << std::hex << hash;
@@ -734,7 +733,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[INFO] Database v2 opened" << std::endl;
     db_init(db);
     db_v2_init(db);
-    std::mutex db_write_mutex;
+    std::mutex db_mutex;
 
     std::mutex api_key_mutex;
 
@@ -793,12 +792,12 @@ int main(int argc, char* argv[]) {
         res.set_content(result.dump(), "application/json");
     });
 
-    server.Post("/api/jobs/update", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/update", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
             std::string job_id = body["job_id"];
 
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             if (body.contains("user_status")) {
                 std::string status = body["user_status"];
                 if (status != "unseen" && status != "interested" && status != "applied" && status != "skipped" && status != "deleted")
@@ -833,7 +832,7 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    server.Delete("/api/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Delete("/api/jobs/bulk", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
             int deleted = 0;
@@ -842,7 +841,7 @@ int main(int argc, char* argv[]) {
                 std::string fit_label = body["fit_label"];
                 if (fit_label.empty())
                     throw std::runtime_error("Missing fit_label value");
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 deleted = bulk_soft_delete_by_fit_label(db, fit_label);
             } else {
                 std::string status = body.value("status", "");
@@ -851,7 +850,7 @@ int main(int argc, char* argv[]) {
                 if (status.empty())
                     throw std::runtime_error("Missing 'status' or 'fit_label' field");
 
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 deleted = bulk_soft_delete_by_status(db, status, older_than_days);
             }
 
@@ -862,9 +861,9 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    server.Delete("/api/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Delete("/api/jobs/:id", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             delete_job(db, req.path_params.at("id"));
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -873,9 +872,9 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    server.Post("/api/jobs/:id/soft-delete", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/:id/soft-delete", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             update_job_field(db, req.path_params.at("id"), "user_status", "deleted");
             res.set_content(json{{"ok", true}}.dump(), "application/json");
         } catch (const std::exception& e) {
@@ -884,11 +883,11 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    server.Post("/api/jobs/restore-all", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/jobs/restore-all", [&db, &db_mutex](const httplib::Request&, httplib::Response& res) {
         try {
             int restored;
             {
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 restored = restore_all_deleted(db);
             }
             res.set_content(json{{"ok", true}, {"restored", restored}}.dump(), "application/json");
@@ -898,7 +897,7 @@ int main(int argc, char* argv[]) {
         }
     });
 
-    server.Post("/api/scrape/jobs", [&db, &config_v2, &config_v2_mutex, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/scrape/jobs", [&db, &config_v2, &config_v2_mutex, &db_mutex](const httplib::Request&, httplib::Response& res) {
         std::cout << "[INFO] Starting job scrape operation" << std::endl;
         int inserted = 0;
 
@@ -924,12 +923,12 @@ int main(int argc, char* argv[]) {
                 std::cout << "[INFO] Query: " << q << " - " << documents.size() << " results" << std::endl;
 
                 for (auto& doc : documents) {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
+                    std::lock_guard<std::mutex> lock(db_mutex);
                     insert_or_update_job(db, jobFromJson(doc));
                     inserted++;
                 }
                 {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
+                    std::lock_guard<std::mutex> lock(db_mutex);
                     delete_expired_jobs(db);
                 }
 
@@ -946,7 +945,7 @@ int main(int argc, char* argv[]) {
             try {
                 auto linkedInJobs = scrapeLinkedIn(linkedInConfig);
                 for (auto& job : linkedInJobs) {
-                    std::lock_guard<std::mutex> lock(db_write_mutex);
+                    std::lock_guard<std::mutex> lock(db_mutex);
                     insert_or_update_job(db, job);
                     inserted++;
                 }
@@ -960,10 +959,10 @@ int main(int argc, char* argv[]) {
         res.set_content(json{{"ok", true}, {"count", inserted}}.dump(), "application/json");
     });
 
-    server.Post("/api/scrape/details", [&db, &db_write_mutex, &detail_progress](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/scrape/details", [&db, &db_mutex, &detail_progress](const httplib::Request&, httplib::Response& res) {
         std::vector<Job> jobs;
         {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             jobs = get_jobs_needing_details(db);
         }
         int total = static_cast<int>(jobs.size());
@@ -974,7 +973,7 @@ int main(int argc, char* argv[]) {
         detail_progress.total   = total;
         detail_progress.running = true;
 
-        std::thread([jobs = std::move(jobs), &db, &db_write_mutex, &detail_progress]() {
+        std::thread([jobs = std::move(jobs), &db, &db_mutex, &detail_progress]() {
             int updated = 0, failed = 0;
             bool linkedInBlocked = false;
 
@@ -987,7 +986,6 @@ int main(int argc, char* argv[]) {
                     Job updated_job;
 
                     if (!is_linkedin) {
-                        // jobs.ch detail
                         rateLimitSleep();
                         long status = 0;
                         std::string body = httpGet(
@@ -997,7 +995,7 @@ int main(int argc, char* argv[]) {
                             std::cerr << "[DETAIL] " << job.job_id << " HTTP " << status
                                       << " — skipping" << std::endl;
                             {
-                                std::lock_guard<std::mutex> lock(db_write_mutex);
+                                std::lock_guard<std::mutex> lock(db_mutex);
                                 delete_job(db, job.job_id);
                             }
                             failed++;
@@ -1020,7 +1018,7 @@ int main(int argc, char* argv[]) {
                         updated_job.source = "jobs_ch";
 
                     } else {
-                        // LinkedIn detail — strip "li_" prefix for the API URL
+                        // "li_" is our internal namespace prefix, not part of the LinkedIn job ID.
                         std::string linkedInId = job.job_id.substr(3);
                         std::string url   = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/" + linkedInId;
 
@@ -1036,7 +1034,7 @@ int main(int argc, char* argv[]) {
                         if (status == 404) {
                             std::cerr << "[LI] 404 on detail " << job.job_id << " — job expired, skipping" << std::endl;
                             {
-                                std::lock_guard<std::mutex> lock(db_write_mutex);
+                                std::lock_guard<std::mutex> lock(db_mutex);
                                 delete_job(db, job.job_id);
                             }
                             failed++;
@@ -1060,7 +1058,7 @@ int main(int argc, char* argv[]) {
                             continue;
                         }
 
-                        updated_job = job; // carry over existing fields
+                        updated_job = job;
 
                         {
                             std::string v = extractTagContent(html, "top-card-layout__title", "</h1>");
@@ -1083,7 +1081,7 @@ int main(int argc, char* argv[]) {
                     }
 
                     {
-                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        std::lock_guard<std::mutex> lock(db_mutex);
                         update_job_details(db, updated_job);
                     }
                     updated++;
@@ -1172,7 +1170,7 @@ int main(int argc, char* argv[]) {
             if (endpoint.empty()) throw std::runtime_error("endpoint required");
             if (model.empty())    throw std::runtime_error("model required");
 
-            // Write api_keys.json: always for ollama_local (key should be empty), only if non-empty for others
+            // Always persist for ollama_local so we can clear a previously saved key.
             if (provider == "ollama_local" || !apiKey.empty()) {
                 std::ofstream keyFile(base_dir + "/config/api_keys.json");
                 if (!keyFile.is_open()) throw std::runtime_error("Could not write api_keys.json");
@@ -1361,7 +1359,6 @@ then trigger a profile refresh to update the narrative.*
         file.close();
 
         res.set_content(content, "text/markdown");
-        res.set_header("Content-Type", "text/markdown");
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     });
 
@@ -1387,7 +1384,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string content = loadProfileMarkdown();
         if (content.empty()) {
             res.status = 400;
@@ -1408,7 +1405,7 @@ then trigger a profile refresh to update the narrative.*
 
         std::vector<JobRecord> jobs;
         {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             jobs = get_jobs_needing_fitcheck_v2(db, fitcheck_limit);
         }
 
@@ -1433,7 +1430,7 @@ then trigger a profile refresh to update the narrative.*
                 try {
                     auto result = runFitcheck(cleaned, content, system_prompt_template, ai, api_key);
                     {
-                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        std::lock_guard<std::mutex> lock(db_mutex);
                         save_fit_result_v2(db, job.job_id, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
                     }
                     checked++;
@@ -1474,7 +1471,7 @@ then trigger a profile refresh to update the narrative.*
         }.dump(), "application/json");
     });
 
-    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_write_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
@@ -1487,7 +1484,7 @@ then trigger a profile refresh to update the narrative.*
 
         std::optional<std::string> template_text;
         {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             template_text = get_job_template_text(db, job_id);
         }
 
@@ -1515,7 +1512,7 @@ then trigger a profile refresh to update the narrative.*
         try {
             auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
             {
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "md_profile");
             }
             res.set_content(json{
@@ -1535,7 +1532,7 @@ then trigger a profile refresh to update the narrative.*
 
     // ── IMPORT JOB FROM TEXT ──────────────────────────────────────────────────
 
-    server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex, &system_prompt_template]
+    server.Post("/api/jobs/import-text", [&api_key, &db_mutex, &db, &config_v2, &config_v2_mutex, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
@@ -1600,6 +1597,7 @@ then trigger a profile refresh to update the narrative.*
 
         try {
             std::cout << "[INFO] Import: calling AI to extract fields..." << std::endl;
+            // Lower temperature for deterministic field extraction vs. creative text generation.
             json extractionRequest = buildAiRequest(ai.provider, ai.model, extractionPrompt, ai.max_tokens,
                                                   0.3, ai.top_p, ai.top_k);
 
@@ -1658,7 +1656,7 @@ then trigger a profile refresh to update the narrative.*
             job.template_text    = description.empty() ? text : description;
 
             {
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 insert_or_update_job(db, job);
             }
 
@@ -1671,7 +1669,7 @@ then trigger a profile refresh to update the narrative.*
                 if (!cleaned.empty()) {
                     try {
                         auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
-                        std::lock_guard<std::mutex> lock(db_write_mutex);
+                        std::lock_guard<std::mutex> lock(db_mutex);
                         save_fit_result_v2(db, jobId, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
                         std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << result.label << " (" << result.score << ")" << std::endl;
                     } catch (const std::exception& e2) {
@@ -1692,7 +1690,7 @@ then trigger a profile refresh to update the narrative.*
 
     // ── ADMIN CONSOLE ENDPOINTS ────────────────────────────────────────────────
 
-    server.Delete("/api/admin/jobs/bulk", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Delete("/api/admin/jobs/bulk", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
             std::string fit_label = body.value("fit_label", "");
@@ -1700,7 +1698,7 @@ then trigger a profile refresh to update the narrative.*
                 throw std::runtime_error("Missing 'fit_label' field");
             int deleted;
             {
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 deleted = bulk_hard_delete_by_fit_label(db, fit_label);
             }
             std::cout << "[ADMIN] Hard-deleted " << deleted << " jobs with fit_label=" << fit_label << std::endl;
@@ -1711,11 +1709,11 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Delete("/api/admin/jobs/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Delete("/api/admin/jobs/:id", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[ADMIN] DELETE /api/admin/jobs/" << job_id << std::endl;
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             delete_job(db, job_id);
             std::cout << "[ADMIN] Deleted job " << job_id << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
@@ -1726,11 +1724,11 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/clear/:id", [&db, &db_write_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/admin/fitcheck/clear/:id", [&db, &db_mutex](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[ADMIN] POST /api/admin/fitcheck/clear/" << job_id << std::endl;
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             clear_fit_data(db, job_id);
             std::cout << "[ADMIN] Cleared fit data for job " << job_id << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
@@ -1741,10 +1739,10 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/clear", [&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/admin/fitcheck/clear", [&db, &db_mutex](const httplib::Request&, httplib::Response& res) {
         std::cout << "[ADMIN] POST /api/admin/fitcheck/clear (all)" << std::endl;
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             clear_all_fit_data(db);
             std::cout << "[ADMIN] Cleared all fit data" << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
@@ -1755,7 +1753,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
+    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_mutex, &db, &config_v2, &config_v2_mutex,
         &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
@@ -1768,13 +1766,13 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
         {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             clear_fit_data(db, job_id);
         }
 
         std::optional<std::string> templateText;
         {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             templateText = get_job_template_text(db, job_id);
         }
 
@@ -1802,7 +1800,7 @@ then trigger a profile refresh to update the narrative.*
         try {
             auto result = runFitcheck(cleaned, profile, system_prompt_template, ai, api_key);
             {
-                std::lock_guard<std::mutex> lock(db_write_mutex);
+                std::lock_guard<std::mutex> lock(db_mutex);
                 save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "admin_recheck");
             }
             res.set_content(json{{"ok", true}, {"fit_score", result.score}, {"fit_label", result.label}}.dump(), "application/json");
@@ -1812,10 +1810,10 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/recheck",[&db, &db_write_mutex](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/admin/fitcheck/recheck",[&db, &db_mutex](const httplib::Request&, httplib::Response& res) {
         std::cout << "[INFO] Admin batch recheck triggered (clear all)" << std::endl;
         try {
-            std::lock_guard<std::mutex> lock(db_write_mutex);
+            std::lock_guard<std::mutex> lock(db_mutex);
             clear_all_fit_data(db);
             res.set_content(json{{"ok", true}, {"message", "All fit data cleared. Trigger /api/fitcheck to recheck."}}.dump(), "application/json");
         } catch (const std::exception& e) {
