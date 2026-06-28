@@ -204,8 +204,7 @@ static std::string stripHtmlTags(const std::string& s) {
     return out;
 }
 
-static std::string cleanHtmlField(const std::string& raw) {
-    std::string s = decodeHtmlEntities(stripHtmlTags(raw));
+static std::string collapseWhitespace(const std::string& s) {
     std::string out;
     bool inSpace = false;
     for (unsigned char c : s) {
@@ -218,6 +217,10 @@ static std::string cleanHtmlField(const std::string& raw) {
     while (!out.empty() && std::isspace((unsigned char)out.front())) out = out.substr(1);
     while (!out.empty() && std::isspace((unsigned char)out.back()))  out.pop_back();
     return out;
+}
+
+static std::string cleanHtmlField(const std::string& raw) {
+    return collapseWhitespace(decodeHtmlEntities(stripHtmlTags(raw)));
 }
 
 // Find first occurrence of classMarker (e.g. `class="foo"`), skip to closing '>',
@@ -541,19 +544,7 @@ std::string cleanTemplateText(const std::string& raw) {
         html = raw;
     }
 
-    std::string text = decodeHtmlEntities(stripHtmlTags(html));
-
-    std::string collapsed;
-    bool lastWasSpace = false;
-    for (char c : text) {
-        if (std::isspace(c)) {
-            if (!lastWasSpace) { collapsed += ' '; lastWasSpace = true; }
-        } else {
-            collapsed += c; lastWasSpace = false;
-        }
-    }
-    while (!collapsed.empty() && std::isspace(collapsed.back()))
-        collapsed.pop_back();
+    std::string collapsed = collapseWhitespace(decodeHtmlEntities(stripHtmlTags(html)));
 
     if (collapsed.size() > 8000) {
         collapsed = collapsed.substr(0, 8000);
@@ -657,6 +648,14 @@ static json extractJsonFromResponse(const std::string& raw) {
             return json::parse(content.substr(obj_start, obj_end - obj_start + 1));
         throw std::runtime_error("No valid JSON found in response");
     }
+}
+
+
+static std::string generateManualJobId(const std::string& text){
+    size_t hash = std::hash<std::string>{}(text.substr(0, 500));
+    std::stringstream ss;
+    ss << "m" << std::hex << hash;
+    return ss.str();
 }
 
 static std::string buildFitcheckPrompt(const std::string& system_prompt_template,
@@ -1323,16 +1322,9 @@ then trigger a profile refresh to update the narrative.*
 
             prompt += profileText;
 
-            json request = {
-                {"model",       ai.model},
-                {"messages",    json::array({{{"role", "user"}, {"content", prompt}}})},
-                {"max_tokens",  ai.max_tokens},
-                {"temperature", ai.temperature},
-                {"top_p",       ai.top_p},
-                {"stream",      false}
-            };
+            json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens, ai.temperature, ai.top_p, ai.top_k);
+
             if (!isOllamaLocal(ai.provider)) request["response_format"] = {{"type", "text"}};
-            if (isOllamaLocal(ai.provider) && ai.top_k > 0) request["top_k"] = ai.top_k;
 
             std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
             std::string parsedResponse = parseStreamingResponse(response);
@@ -1543,15 +1535,7 @@ then trigger a profile refresh to update the narrative.*
 
     // ── IMPORT JOB FROM TEXT ──────────────────────────────────────────────────
 
-    auto generateManualJobId = [](const std::string& text) -> std::string {
-        size_t hash = std::hash<std::string>{}(text.substr(0, 500));
-        std::stringstream ss;
-        ss << "m" << std::hex << hash;
-        return ss.str();
-    };
-
-    server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex,
-        &generateManualJobId, &system_prompt_template]
+    server.Post("/api/jobs/import-text", [&api_key, &db_write_mutex, &db, &config_v2, &config_v2_mutex, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
