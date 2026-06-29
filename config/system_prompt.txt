@@ -58,8 +58,8 @@ INSTRUCTIONS:
                     central to the role, rare industry access). If the upside is generic
                     or the friction is minor, use Decent or Weak instead.
     - Weak:         fit_score 20–34. More friction than value — possible but hard to recommend.
-    - No Go:        fit_score < 20 typical, but any score possible. Hard No-Go violation
-                    present, or fundamental mismatch on multiple axes simultaneously.
+    - No Go:        fit_score ≤ 19, always. Hard No-Go violation present, or fundamental
+                    mismatch on multiple axes simultaneously.
 
 5. Estimate hiring chances. This is speculative but must be grounded in
    concrete reasoning. Consider:

@@ -1,12 +1,10 @@
 # TODO
 
 ## UX improvements
-- [ ] Scrape button is finished before detail fetch is
-- [x] Cleanup button is bigger than the rest
-- [x] detail fetch progress and scrape progress have different visible look
+- [x] Scrape button is finished before detail fetch is
 
 ## Logic
-- [ ] No-Go label can have higher points than weak
+- [x] No-Go label can have higher points than weak
 - [ ] No Fitcheck Done log for single fitcheck
 - [ ] Periodic auto-scrape + fit-check
   Plan: background `std::jthread` + `condition_variable`, wakes on interval or config change.

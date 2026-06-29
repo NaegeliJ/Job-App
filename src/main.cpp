@@ -1535,6 +1535,8 @@ then trigger a profile refresh to update the narrative.*
                 {"fit_summary",   result.summary},
                 {"fit_reasoning", result.reasoning}
             }.dump(), "application/json");
+            std::cout << "[INFO] Fitcheck completed for job: " << job_id << std::endl;
+
         } catch (const FatalAiError& e) {
             res.status = 500;
             res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
