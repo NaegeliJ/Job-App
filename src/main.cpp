@@ -167,7 +167,7 @@ static std::string httpGetLinkedIn(const std::string& url, long* out_status = nu
     }, "", 30L, out_status);
 }
 
-static std::string httpGetLinkedInPublic(const std::string& url, long* out_status = nullptr) {
+static std::string httpGetLinkedInSearch(const std::string& url, long* out_status = nullptr) {
     return httpRequest(url, "GET", {
         "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -432,12 +432,12 @@ static std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg) {
 
         rateLimitSleep(1500, 3000);
         long status = 0;
-        std::string html = httpGetLinkedInPublic(url, &status);
+        std::string html = httpGetLinkedInSearch(url, &status);
 
         if (status == 429) {
             std::cerr << "[LI] 429 on search for '" << q << "', sleeping 30s" << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(30));
-            html = httpGetLinkedInPublic(url, &status);
+            html = httpGetLinkedInSearch(url, &status);
         }
         if (status != 200 || html.empty()) {
             std::cerr << "[LI] Search failed (HTTP " << status << ") for '" << q << "'" << std::endl;
@@ -575,6 +575,11 @@ std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2&
         return ai_data;
     }
     return std::nullopt;
+}
+
+std::string readApiKey(const std::string& api_key, std::mutex& mtx) {
+    std::lock_guard<std::mutex> lock(mtx);
+    return api_key;
 }
 
 // ── FIT-CHECK HELPERS ────────────────────────────────────────────────────────
@@ -965,13 +970,19 @@ int main(int argc, char* argv[]) {
             std::lock_guard<std::mutex> lock(db_mutex);
             jobs = get_jobs_needing_details(db);
         }
+        bool expected = false;
+        if (!detail_progress.running.compare_exchange_strong(expected, true)) {
+            res.status = 409;
+            res.set_content(json{{"ok", false}, {"error", "detail fetch already running"}}.dump(), "application/json");
+            return;
+        }
+
         int total = static_cast<int>(jobs.size());
         std::cout << "[INFO] Launching background detail fetch for " << total << " jobs" << std::endl;
 
-        detail_progress.done    = 0;
-        detail_progress.failed  = 0;
-        detail_progress.total   = total;
-        detail_progress.running = true;
+        detail_progress.done   = 0;
+        detail_progress.failed = 0;
+        detail_progress.total  = total;
 
         std::thread([jobs = std::move(jobs), &db, &db_mutex, &detail_progress]() {
             int updated = 0, failed = 0;
@@ -1210,7 +1221,7 @@ int main(int argc, char* argv[]) {
 
     // ── V2 API ENDPOINTS ───────────────────────────────────────────────────────
 
-    server.Post("/api/onboarding/complete", [&api_key, &config_v2, &config_v2_mutex](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/onboarding/complete", [&api_key, &api_key_mutex, &config_v2, &config_v2_mutex](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
 
@@ -1220,7 +1231,8 @@ int main(int argc, char* argv[]) {
                 return;
             }
 
-            auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+            std::string key = readApiKey(api_key, api_key_mutex);
+            auto ai_opt = getReadyAi(key, config_v2, config_v2_mutex);
             if (!ai_opt) {
                 res.status = 500;
                 res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1324,7 +1336,7 @@ then trigger a profile refresh to update the narrative.*
 
             if (!isOllamaLocal(ai.provider)) request["response_format"] = {{"type", "text"}};
 
-            std::string response = httpPostAI(ai.endpoint, api_key, request.dump());
+            std::string response = httpPostAI(ai.endpoint, key, request.dump());
             std::string parsedResponse = parseStreamingResponse(response);
 
             if (parsedResponse.empty())
@@ -1384,7 +1396,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
+    server.Post("/api/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &api_key_mutex, &db_mutex, &db, &system_prompt_template, &fitcheck_progress](const httplib::Request&, httplib::Response& res) {
         std::string content = loadProfileMarkdown();
         if (content.empty()) {
             res.status = 400;
@@ -1392,7 +1404,8 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        std::string key = readApiKey(api_key, api_key_mutex);
+        auto ai_opt = getReadyAi(key, config_v2, config_v2_mutex);
         if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1428,7 +1441,7 @@ then trigger a profile refresh to update the narrative.*
                     continue;
                 }
                 try {
-                    auto result = runFitcheck(cleaned, content, system_prompt_template, ai, api_key);
+                    auto result = runFitcheck(cleaned, content, system_prompt_template, ai, key);
                     {
                         std::lock_guard<std::mutex> lock(db_mutex);
                         save_fit_result_v2(db, job.job_id, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
@@ -1471,7 +1484,7 @@ then trigger a profile refresh to update the narrative.*
         }.dump(), "application/json");
     });
 
-    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &db_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/jobs/:id/fitcheck", [&config_v2, &config_v2_mutex, &api_key, &api_key_mutex, &db_mutex, &db, &system_prompt_template](const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
@@ -1501,7 +1514,8 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        std::string key = readApiKey(api_key, api_key_mutex);
+        auto ai_opt = getReadyAi(key, config_v2, config_v2_mutex);
         if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1510,7 +1524,7 @@ then trigger a profile refresh to update the narrative.*
         const AiSnapshot& ai = *ai_opt;
 
         try {
-            auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
+            auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, key);
             {
                 std::lock_guard<std::mutex> lock(db_mutex);
                 save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "md_profile");
@@ -1532,7 +1546,7 @@ then trigger a profile refresh to update the narrative.*
 
     // ── IMPORT JOB FROM TEXT ──────────────────────────────────────────────────
 
-    server.Post("/api/jobs/import-text", [&api_key, &db_mutex, &db, &config_v2, &config_v2_mutex, &system_prompt_template]
+    server.Post("/api/jobs/import-text", [&api_key, &api_key_mutex, &db_mutex, &db, &config_v2, &config_v2_mutex, &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::cout << "[INFO] POST /api/jobs/import-text — request received (" << req.body.size() << " bytes)" << std::endl;
 
@@ -1554,7 +1568,8 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        std::string key = readApiKey(api_key, api_key_mutex);
+        auto ai_opt = getReadyAi(key, config_v2, config_v2_mutex);
         if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1601,7 +1616,7 @@ then trigger a profile refresh to update the narrative.*
             json extractionRequest = buildAiRequest(ai.provider, ai.model, extractionPrompt, ai.max_tokens,
                                                   0.3, ai.top_p, ai.top_k);
 
-            std::string extractionResponse = httpPostAI(ai.endpoint, api_key, extractionRequest.dump());
+            std::string extractionResponse = httpPostAI(ai.endpoint, key, extractionRequest.dump());
             std::string accumulated = parseStreamingResponse(extractionResponse);
             if (accumulated.empty()) throw std::runtime_error("Empty response from extraction AI");
             std::cout << "[INFO] Import: extraction AI responded (" << accumulated.size() << " chars)" << std::endl;
@@ -1668,7 +1683,7 @@ then trigger a profile refresh to update the narrative.*
                 std::string cleaned = cleanTemplateText(job.template_text);
                 if (!cleaned.empty()) {
                     try {
-                        auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, api_key);
+                        auto result = runFitcheck(cleaned, profileContent, system_prompt_template, ai, key);
                         std::lock_guard<std::mutex> lock(db_mutex);
                         save_fit_result_v2(db, jobId, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
                         std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << result.label << " (" << result.score << ")" << std::endl;
@@ -1753,7 +1768,7 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &db_mutex, &db, &config_v2, &config_v2_mutex,
+    server.Post("/api/admin/fitcheck/recheck/:id", [&api_key, &api_key_mutex, &db_mutex, &db, &config_v2, &config_v2_mutex,
         &system_prompt_template]
     (const httplib::Request& req, httplib::Response& res) {
         std::string job_id = req.path_params.at("id");
@@ -1782,7 +1797,8 @@ then trigger a profile refresh to update the narrative.*
             return;
         }
 
-        auto ai_opt = getReadyAi(api_key, config_v2, config_v2_mutex);
+        std::string key = readApiKey(api_key, api_key_mutex);
+        auto ai_opt = getReadyAi(key, config_v2, config_v2_mutex);
         if (!ai_opt) {
             res.status = 500;
             res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
@@ -1798,7 +1814,7 @@ then trigger a profile refresh to update the narrative.*
         }
 
         try {
-            auto result = runFitcheck(cleaned, profile, system_prompt_template, ai, api_key);
+            auto result = runFitcheck(cleaned, profile, system_prompt_template, ai, key);
             {
                 std::lock_guard<std::mutex> lock(db_mutex);
                 save_fit_result_v2(db, job_id, result.score, result.label, result.summary, result.reasoning, "admin_recheck");
