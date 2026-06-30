@@ -2,6 +2,7 @@
 #include <fstream>
 #include "json.hpp"
 
+
 using json = nlohmann::json;
 
 
@@ -39,7 +40,6 @@ ConfigV2 loadConfigV2(const std::string& path) {
     return cfg;
 }
 
-
 void validateConfigV2(const json& c) {
     auto require = [&](const std::string& key) {
         if (!c.contains(key))
@@ -49,7 +49,6 @@ void validateConfigV2(const json& c) {
     require("fitcheck");
 }
 
-
 AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
     std::shared_lock<std::shared_mutex> lock(mtx);
     return { cfg.provider, cfg.model, cfg.ai_endpoint,
@@ -57,11 +56,9 @@ AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
              cfg.temperature, cfg.top_p };
 }
 
-
 bool apiKeyReady(const std::string& api_key, const AiSnapshot& ai){
     return !api_key.empty() || ai.provider == "ollama_local";
 }
-
 
 std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2& cfg, std::shared_mutex& mtx){
     AiSnapshot ai_data = snapshotAiConfig(cfg, mtx);
@@ -71,8 +68,14 @@ std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2&
     return std::nullopt;
 }
 
-
 std::string readApiKey(const std::string& api_key, std::mutex& mtx) {
     std::lock_guard<std::mutex> lock(mtx);
     return api_key;
+}
+
+std::string loadProfileMarkdown(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) return "";
+    return std::string((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
 }

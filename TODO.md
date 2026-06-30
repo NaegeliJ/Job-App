@@ -105,7 +105,7 @@ src/
 3. `config.cpp/h` — functions take explicit path args, not static globals
 4. `ai.cpp/h` — depends on `http.h`, `config.h`
 5. `scraper.cpp/h` — depends on `http.h`, `html.h`, `config.h`, `db.h`; includes `fetchJobDetails`
-6. `app_state.h` — depends on `config.h`, `db.h`; defines `ProgressTracker` inline
+6. `app_state.h` — depends on `config.h`, `db.h`; defines `ProgressTracker` inline. Should also fix the api key mutex issue
 7. `fitcheck.cpp/h` — depends on `ai.h`, `config.h`, `db.h`, `app_state.h`; service fns + DRY helpers
 8. `*_routes.cpp` + `routes.cpp/h` — thin handlers; depend on everything
 9. `main.cpp` — shrinks to ~60 lines; static path globals deleted; loads new prompt files

@@ -1,5 +1,6 @@
 #ifndef JOB_APP_CONFIG_H
 #define JOB_APP_CONFIG_H
+
 #include <string>
 #include <vector>
 #include <shared_mutex>
@@ -27,11 +28,13 @@ struct ConfigV2 {
     int                      top_k{};
 };
 
+
 struct AiSnapshot {
     std::string provider, model, endpoint;
     int max_tokens, top_k;
     double temperature, top_p;
 };
+
 
 ConfigV2 loadConfigV2(const std::string& path);
 void validateConfigV2(const nlohmann::json& c);
@@ -39,5 +42,7 @@ AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx);
 bool apiKeyReady(const std::string& api_key, const AiSnapshot& ai);
 std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2& cfg, std::shared_mutex& mtx);
 std::string readApiKey(const std::string& api_key, std::mutex& mtx);
+std::string loadProfileMarkdown(const std::string& path);
+
 
 #endif
