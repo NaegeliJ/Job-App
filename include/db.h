@@ -4,7 +4,6 @@
 
 #ifndef JOB_APP_DB_H
 #define JOB_APP_DB_H
-#include <functional>
 #include <optional>
 #include <string>
 #include <vector>

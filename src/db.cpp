@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 #include "../include/db.h"
 
 namespace {
@@ -72,11 +73,11 @@ void update_job_field(sqlite3 *db, const std::string &job_id, const std::string&
     static const std::vector<std::string> allowedFields = {
         "user_status", "rating", "notes", "availability_status", "application_url"
     };
-    
+
     if (std::find(allowedFields.begin(), allowedFields.end(), field) == allowedFields.end()) {
         throw std::runtime_error("Invalid field name: " + field);
     }
-    
+
     const std::string sql_update_str = "UPDATE jobs SET " + field + " = ? WHERE job_id = ?";
     exec_write(db, sql_update_str, {value, job_id});
 }
@@ -217,7 +218,7 @@ std::vector<Job> get_jobs_needing_details(sqlite3* db) {
         job.source          = getColumn(stmt, 12);
         jobs.push_back(job);
     }, {});
-    
+
     return jobs;
 }
 
