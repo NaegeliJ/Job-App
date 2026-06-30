@@ -12,7 +12,7 @@ add_compile_definitions(APP_VERSION="${APP_VERSION}")
 if(WIN32)
     set(WIN_COMPAT_SRC src/win_compat.c)
 endif()
-add_executable(Job_App src/main.cpp src/sqlite3.c src/db.cpp src/http.cpp ${WIN_COMPAT_SRC})
+add_executable(Job_App src/main.cpp src/sqlite3.c src/db.cpp src/http.cpp src/html.cpp ${WIN_COMPAT_SRC})
 
 target_include_directories(Job_App PRIVATE include/)
 
