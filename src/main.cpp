@@ -24,6 +24,7 @@
 #include "db.h"
 #include "http.h"
 #include "html.h"
+#include "config.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -63,11 +64,6 @@ static std::pair<std::string,std::string> classifyAiError(long http_status, cons
     return {"", ""};
 }
 
-struct AiSnapshot {
-    std::string provider, model, endpoint;
-    int max_tokens, top_k;
-    double temperature, top_p;
-};
 
 static const std::string& configPath() { return s_config_path; }
 static const std::string& systemPromptPath() { return s_system_prompt_path; }
@@ -208,72 +204,6 @@ json buildAiRequest(const std::string& provider, const std::string& model, const
     return req;
 }
 
-// ── CONFIG ───────────────────────────────────────────────────────────────────
-
-struct ConfigV2 {
-    bool                     scrape_enabled{true};
-    std::vector<std::string> scrape_queries;
-    int                      scrape_rows{};
-
-    bool                     linkedin_enabled{false};
-    std::vector<std::string> linkedin_queries;
-    std::string              linkedin_location{"Switzerland"};
-    std::string              linkedin_time_range{"r604800"};
-    int                      linkedin_max_results{25};
-
-    std::string              provider{"ollama_local"};
-    int                      fitcheck_limit{};
-    std::string              model{};
-    std::string              ai_endpoint{};
-    int                      max_tokens{};
-    double                   temperature{};
-    double                   top_p{};
-    int                      top_k{};
-};
-
-void validateConfigV2(const json& c) {
-    auto require = [&](const std::string& key) {
-        if (!c.contains(key))
-            throw std::runtime_error("Missing required config key: " + key);
-    };
-    require("scrape");
-    require("fitcheck");
-}
-
-ConfigV2 loadConfigV2() {
-    std::ifstream file(configPath());
-    if (!file.is_open())
-        throw std::runtime_error("Could not open config_v2.json");
-
-    json c = json::parse(file);
-    validateConfigV2(c);
-    ConfigV2 cfg;
-
-    cfg.scrape_enabled    = c["scrape"].value("enabled", true);
-    cfg.scrape_queries    = c["scrape"]["queries"].get<std::vector<std::string>>();
-    cfg.scrape_rows       = c["scrape"]["rows"].get<int>();
-
-    if (c.contains("linkedin")) {
-        cfg.linkedin_enabled     = c["linkedin"].value("enabled", false);
-        if (c["linkedin"].contains("queries"))
-            cfg.linkedin_queries = c["linkedin"]["queries"].get<std::vector<std::string>>();
-        cfg.linkedin_location    = c["linkedin"].value("location", "Switzerland");
-        cfg.linkedin_time_range  = c["linkedin"].value("time_range", "r604800");
-        cfg.linkedin_max_results = std::min(50, std::max(1, c["linkedin"].value("max_results", 25)));
-    }
-
-    cfg.provider          = c["fitcheck"].value("provider", "ollama_local");
-    cfg.fitcheck_limit    = c["fitcheck"]["limit"].get<int>();
-    cfg.model             = c["fitcheck"]["model"].get<std::string>();
-    cfg.ai_endpoint       = c["fitcheck"]["endpoint"].get<std::string>();
-    cfg.max_tokens        = c["fitcheck"].value("max_tokens", 4000);
-    cfg.temperature       = c["fitcheck"].value("temperature", 1.0);
-    cfg.top_p             = c["fitcheck"].value("top_p", 0.95);
-    cfg.top_k             = c["fitcheck"].value("top_k", 64);
-
-    return cfg;
-}
-
 
 static std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg) {
     std::vector<Job> result;
@@ -385,34 +315,6 @@ Job jobFromJson(const json& data) {
     return job;
 }
 
-
-// ── AI HELPERS ───────────────────────────────────────────────────────────────
-
-
-AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {
-    std::shared_lock<std::shared_mutex> lock(mtx);
-    return { cfg.provider, cfg.model, cfg.ai_endpoint,
-             cfg.max_tokens, cfg.top_k,
-             cfg.temperature, cfg.top_p };
-}
-
-bool apiKeyReady(const std::string& api_key, const AiSnapshot& ai){
-    return !api_key.empty() || ai.provider == "ollama_local";
-}
-
-
-std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2& cfg, std::shared_mutex& mtx){
-    AiSnapshot ai_data = snapshotAiConfig(cfg, mtx);
-    if (apiKeyReady(api_key, ai_data)){
-        return ai_data;
-    }
-    return std::nullopt;
-}
-
-std::string readApiKey(const std::string& api_key, std::mutex& mtx) {
-    std::lock_guard<std::mutex> lock(mtx);
-    return api_key;
-}
 
 // ── FIT-CHECK HELPERS ────────────────────────────────────────────────────────
 
@@ -586,7 +488,7 @@ int main(int argc, char* argv[]) {
     ConfigV2 config_v2;
     std::shared_mutex config_v2_mutex;
     try {
-        config_v2 = loadConfigV2();
+        config_v2 = loadConfigV2(configPath());
         std::cout << "[INFO] Config v2 loaded" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[WARN] Could not load config_v2.json: " << e.what() << std::endl;
@@ -978,7 +880,7 @@ int main(int argc, char* argv[]) {
 
             {
                 std::unique_lock<std::shared_mutex> lock(config_v2_mutex);
-                config_v2 = loadConfigV2();
+                config_v2 = loadConfigV2(configPath());
             }
             std::cout << "[INFO] Config reloaded" << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
@@ -1036,7 +938,7 @@ int main(int argc, char* argv[]) {
             }
             {
                 std::unique_lock<std::shared_mutex> cfglock(config_v2_mutex);
-                config_v2 = loadConfigV2();
+                config_v2 = loadConfigV2(configPath());
             }
             if (provider == "ollama_local" || !apiKey.empty()) {
                 std::lock_guard<std::mutex> keylock(api_key_mutex);
