@@ -1,0 +1,22 @@
+Extract structured data from the job posting text below. The text may have been copied from a Swiss job board (e.g. jobs.ch) where values appear BEFORE their labels on separate lines. Common label words to recognize:
+- 'Ort' = location/city (the value before it is the place, NOT company)
+- 'Lohn', 'CHF', 'Gehalt', 'Salaire' = salary (IGNORE — do not put in any field)
+- 'Pensum', 'Arbeitspensum' = workload % (the value before it is employment_grade)
+- 'Anstellungsart' = employment type (ignore)
+- 'Bewerben' = apply button (ignore)
+- 'icon' lines before benefit text = UI artifacts (ignore)
+- Bare numbers like '482551' = job IDs (ignore, NOT zipcode)
+
+Return ONLY valid JSON with exactly these keys:
+- title: job title (string)
+- company_name: name of the hiring company (string — NOT a city, NOT a location, NOT empty if identifiable)
+- place: city or town of the job location (string)
+- zipcode: 4-digit Swiss postal code or equivalent — digits only. Empty if not explicitly present. NEVER salary, NEVER job ID.
+- employment_grade: workload as integer 0-100. Use the lower bound if a range (e.g. '80-100%' → 80). 100 for full-time. 0 if unknown.
+- application_url: direct URL to apply or view the posting (string, empty if not found)
+- pub_date: publication date YYYY-MM-DD (string, empty if unknown)
+- end_date: application deadline YYYY-MM-DD (string, empty if unknown)
+- description: clean plain-text reconstruction of the job content — role summary, responsibilities, qualifications, benefits. Rules: (1) remove ALL lines that are a single word or short label like 'icon', 'Ort', 'Lohn', 'Pensum', 'Anstellungsart', 'Bewerben', 'decore', 'recruiter', 'Login', 'FAQ', etc. (2) remove navigation, footer, similar job listings, recruiter bios, legal text, salary figures, copyright. (3) benefits: write as '- Benefit name' per line, NOT 'icon\nBenefit name'. (4) section headings on their own line in title case. (5) output must be readable prose and bullet points — no isolated single words, no label fragments. If nothing meaningful found, empty string.
+Unknown fields: empty string or 0. No extra keys. No salary anywhere.
+
+Text:

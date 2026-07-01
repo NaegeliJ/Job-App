@@ -1,21 +1,33 @@
 #include "app_state.h"
+#include "db.h"
 #include "json.hpp"
 #include "html.h"
+#include "response.h"
 #include <string>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <ctime>
 #include "fitcheck.h"
 
 using json = nlohmann::json;
 
+static constexpr int kOnboardingQuestionCount = 9;
+static const std::string kAiNotConfigured = "AI not configured — set provider and API key in Settings.";
+
+static void replaceAll(std::string& text, const std::string& from, const std::string& to) {
+    size_t pos;
+    while ((pos = text.find(from)) != std::string::npos)
+        text.replace(pos, from.length(), to);
+}
 
 static std::string buildFitcheckPrompt(const std::string& system_prompt_template,
                                         const std::string& profile, const std::string& job_text) {
-    std::string result = system_prompt_template;
-    size_t pos;
-    while ((pos = result.find("{{profile}}")) != std::string::npos)
-        result.replace(pos, 11, profile);
-    while ((pos = result.find("{{jobText}}")) != std::string::npos)
-        result.replace(pos, 11, job_text);
-    return result;
+    std::string prompt = system_prompt_template;
+    replaceAll(prompt, "{{profile}}", profile);
+    replaceAll(prompt, "{{jobText}}", job_text);
+    return prompt;
 }
 
 static std::string generateManualJobId(const std::string& text) {
@@ -25,9 +37,55 @@ static std::string generateManualJobId(const std::string& text) {
     return ss.str();
 }
 
+static std::string todayIsoDate() {
+    std::time_t now = std::time(nullptr);
+    std::tm tm_buf{};
+#ifdef _WIN32
+    localtime_s(&tm_buf, &now);
+#else
+    localtime_r(&now, &tm_buf);
+#endif
+    char buf[11];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
+    return buf;
+}
+
+static int parseEmploymentGrade(const json& fields) {
+    if (!fields.contains("employment_grade")) return 0;
+    const json& grade = fields["employment_grade"];
+    if (grade.is_number()) return grade.get<int>();
+    if (grade.is_string()) {
+        std::string text = grade.get<std::string>();
+        auto digit = std::find_if(text.begin(), text.end(), ::isdigit);
+        return digit != text.end() ? std::stoi(std::string(digit, text.end())) : 0;
+    }
+    return 0;
+}
+
+static Job buildJobFromExtraction(const json& fields, const std::string& job_id, const std::string& source_text) {
+    Job job;
+    job.job_id           = job_id;
+    job.title            = fields.value("title", "");
+    job.company_name     = fields.value("company_name", "");
+    job.place            = fields.value("place", "");
+    job.zipcode          = fields.value("zipcode", "");
+    job.canton_code      = "N/A";
+    job.employment_grade = parseEmploymentGrade(fields);
+    job.application_url  = fields.value("application_url", "");
+    job.detail_url       = "";
+    job.pub_date         = fields.value("pub_date", "");
+    if (job.pub_date.empty())
+        job.pub_date = todayIsoDate();
+    job.end_date         = fields.value("end_date", "");
+
+    std::string description = fields.value("description", "");
+    job.template_text    = description.empty() ? source_text : description;
+    return job;
+}
+
 FitcheckResult runFitcheck(const std::string& cleaned_text, const std::string& profile,
-                                   const std::string& system_prompt_template, const AiSnapshot& ai,
-                                   const std::string& api_key) {
+                           const std::string& system_prompt_template, const AiSnapshot& ai,
+                           const std::string& api_key) {
     std::string prompt = buildFitcheckPrompt(system_prompt_template, profile, cleaned_text);
     json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens,
                                   ai.temperature, ai.top_p, ai.top_k);
@@ -44,57 +102,107 @@ FitcheckResult runFitcheck(const std::string& cleaned_text, const std::string& p
     };
 }
 
-std::optional<AiSnapshot> resolveAi(AppState& state, httplib::Response& res) {
-      std::string key = readApiKey(state.api_key, state.api_key_mutex);
-      auto ai_opt = getReadyAi(key, state.config_v2, state.config_v2_mutex);
-      if (!ai_opt) {
-          res.status = 500;
-          res.set_content(json{{"error", "AI not configured — set provider and API key in Settings."}}.dump(), "application/json");
-      }
-      return ai_opt;
+FitcheckResult checkAndSave(AppState& state, const std::string& job_id, const std::string& cleaned_text,
+                            const std::string& profile, const AiSnapshot& ai, const std::string& api_key,
+                            const std::string& source) {
+    FitcheckResult result = runFitcheck(cleaned_text, profile, state.system_prompt_template, ai, api_key);
+    std::lock_guard<std::mutex> lock(state.db_mutex);
+    save_fit_result_v2(state.db, job_id, result.score, result.label, result.summary, result.reasoning, source);
+    return result;
+}
 
-  }
+std::optional<AiSnapshot> requireAi(AppState& state, httplib::Response& res) {
+    std::string key = readApiKey(state.api_key, state.api_key_mutex);
+    auto ai = getReadyAi(key, state.config_v2, state.config_v2_mutex);
+    if (!ai)
+        sendError(res, 500, kAiNotConfigured);
+    return ai;
+}
 
+static void recordFailure(ProgressTracker& progress) {
+    progress.failed++;
+    progress.done++;
+}
 
-  void importJobFromText(AppState& state, httplib::Response& res, const AiSnapshot& ai, const std::string& key, const std::string& text){
-      std::string jobId = generateManualJobId(text);
-      std::cout << "[INFO] Import: generated job_id=" << jobId << " from " << text.size() << " chars" << std::endl;
+void runBatchFitcheck(AppState& state, httplib::Response& res) {
+    std::string profile = loadProfileMarkdown(state.profile_path);
+    if (profile.empty()) {
+        sendError(res, 400, "No profile found. Complete onboarding first.");
+        return;
+    }
 
-      std::string truncated = text.substr(0, 8000);
-      std::string extractionPrompt =
-        "Extract structured data from the job posting text below. The text may have been copied from a Swiss job board "
-        "(e.g. jobs.ch) where values appear BEFORE their labels on separate lines. Common label words to recognize:\n"
-        "- 'Ort' = location/city (the value before it is the place, NOT company)\n"
-        "- 'Lohn', 'CHF', 'Gehalt', 'Salaire' = salary (IGNORE — do not put in any field)\n"
-        "- 'Pensum', 'Arbeitspensum' = workload % (the value before it is employment_grade)\n"
-        "- 'Anstellungsart' = employment type (ignore)\n"
-        "- 'Bewerben' = apply button (ignore)\n"
-        "- 'icon' lines before benefit text = UI artifacts (ignore)\n"
-        "- Bare numbers like '482551' = job IDs (ignore, NOT zipcode)\n\n"
-        "Return ONLY valid JSON with exactly these keys:\n"
-        "- title: job title (string)\n"
-        "- company_name: name of the hiring company (string — NOT a city, NOT a location, NOT empty if identifiable)\n"
-        "- place: city or town of the job location (string)\n"
-        "- zipcode: 4-digit Swiss postal code or equivalent — digits only. Empty if not explicitly present. NEVER salary, NEVER job ID.\n"
-        "- employment_grade: workload as integer 0-100. Use the lower bound if a range (e.g. '80-100%' → 80). 100 for full-time. 0 if unknown.\n"
-        "- application_url: direct URL to apply or view the posting (string, empty if not found)\n"
-        "- pub_date: publication date YYYY-MM-DD (string, empty if unknown)\n"
-        "- end_date: application deadline YYYY-MM-DD (string, empty if unknown)\n"
-        "- description: clean plain-text reconstruction of the job content — role summary, responsibilities, "
-        "qualifications, benefits. Rules: (1) remove ALL lines that are a single word or short label like 'icon', "
-        "'Ort', 'Lohn', 'Pensum', 'Anstellungsart', 'Bewerben', 'decore', 'recruiter', 'Login', 'FAQ', etc. "
-        "(2) remove navigation, footer, similar job listings, recruiter bios, legal text, salary figures, copyright. "
-        "(3) benefits: write as '- Benefit name' per line, NOT 'icon\\nBenefit name'. "
-        "(4) section headings on their own line in title case. "
-        "(5) output must be readable prose and bullet points — no isolated single words, no label fragments. "
-        "If nothing meaningful found, empty string.\n"
-        "Unknown fields: empty string or 0. No extra keys. No salary anywhere.\n\nText:\n" + truncated;
+    auto ai_opt = requireAi(state, res);
+    if (!ai_opt) return;
+    const AiSnapshot& ai = *ai_opt;
+    std::string key = readApiKey(state.api_key, state.api_key_mutex);
+
+    int fitcheck_limit;
+    { std::shared_lock<std::shared_mutex> lock(state.config_v2_mutex); fitcheck_limit = state.config_v2.fitcheck_limit; }
+
+    std::vector<JobRecord> jobs;
+    {
+        std::lock_guard<std::mutex> lock(state.db_mutex);
+        jobs = get_jobs_needing_fitcheck_v2(state.db, fitcheck_limit);
+    }
+
+    std::cout << "[INFO] Starting fit-check for " << jobs.size() << " jobs" << std::endl;
+
+    state.fitcheck_progress.done    = 0;
+    state.fitcheck_progress.failed  = 0;
+    state.fitcheck_progress.total   = static_cast<int>(jobs.size());
+    state.fitcheck_progress.running = true;
+
+    int checked = 0, failed = 0;
+    try {
+        for (auto& job : jobs) {
+            std::string cleaned = cleanTemplateText(job.template_text);
+            if (cleaned.empty()) {
+                std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+                failed++;
+                recordFailure(state.fitcheck_progress);
+                continue;
+            }
+            try {
+                checkAndSave(state, job.job_id, cleaned, profile, ai, key, "md_file_profile");
+                checked++;
+                state.fitcheck_progress.done++;
+                std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
+            } catch (const FatalAiError& e) {
+                if (e.code() == "invalid_api_key" || e.code() == "no_credits")
+                    throw;
+                std::cerr << "[WARN] Transient AI error for " << job.job_id << ": " << e.what() << std::endl;
+                failed++;
+                recordFailure(state.fitcheck_progress);
+            } catch (const std::exception& e) {
+                std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
+                failed++;
+                recordFailure(state.fitcheck_progress);
+            }
+        }
+    } catch (const FatalAiError& e) {
+        std::cerr << "[ERROR] Fatal AI error during fit-check: " << e.what() << std::endl;
+        state.fitcheck_progress.running = false;
+        sendJson(res, {{"ok", false}, {"error_code", e.code()}, {"error", e.what()}}, 500);
+        return;
+    }
+
+    state.fitcheck_progress.running = false;
+    sendJson(res, {{"ok", true}, {"checked", checked}, {"failed", failed}});
+}
+
+void importJobFromText(AppState& state, httplib::Response& res, const AiSnapshot& ai,
+                       const std::string& key, const std::string& text) {
+    std::string jobId = generateManualJobId(text);
+    std::cout << "[INFO] Import: generated job_id=" << jobId << " from " << text.size() << " chars" << std::endl;
+
+    std::string truncated = text.substr(0, 8000);
+    std::string extractionPrompt = state.import_prompt + truncated;
 
     try {
         std::cout << "[INFO] Import: calling AI to extract fields..." << std::endl;
         // Lower temperature for deterministic field extraction vs. creative text generation.
         json extractionRequest = buildAiRequest(ai.provider, ai.model, extractionPrompt, ai.max_tokens,
-                                              0.3, ai.top_p, ai.top_k);
+                                                0.3, ai.top_p, ai.top_k);
 
         std::string extractionResponse = httpPostAI(ai.endpoint, key, extractionRequest.dump());
         std::string accumulated = parseStreamingResponse(extractionResponse);
@@ -112,74 +220,88 @@ std::optional<AiSnapshot> resolveAi(AppState& state, httplib::Response& res) {
             }
         }
 
-        Job job;
-        job.job_id           = jobId;
-        job.title            = jobFields.value("title", "");
-        job.company_name     = jobFields.value("company_name", "");
-        job.place            = jobFields.value("place", "");
-        job.zipcode          = jobFields.value("zipcode", "");
-        job.canton_code      = "N/A";
-        {
-            auto& eg = jobFields["employment_grade"];
-            if (eg.is_number()) {
-                job.employment_grade = eg.get<int>();
-            } else if (eg.is_string()) {
-                std::string s = eg.get<std::string>();
-                auto it = std::find_if(s.begin(), s.end(), ::isdigit);
-                job.employment_grade = (it != s.end()) ? std::stoi(std::string(it, s.end())) : 0;
-            } else {
-                job.employment_grade = 0;
-            }
-        }
-        job.application_url  = jobFields.value("application_url", "");
-        job.detail_url       = "";
-        job.pub_date         = jobFields.value("pub_date", "");
-        if (job.pub_date.empty()) {
-            std::time_t now = std::time(nullptr);
-            std::tm tm_buf{};
-#ifdef _WIN32
-            localtime_s(&tm_buf, &now);
-#else
-            localtime_r(&now, &tm_buf);
-#endif
-            char buf[11];
-            std::strftime(buf, sizeof(buf), "%Y-%m-%d", &tm_buf);
-            job.pub_date = buf;
-        }
-        job.end_date         = jobFields.value("end_date", "");
-        std::string description = jobFields.value("description", "");
-        job.template_text    = description.empty() ? text : description;
-
+        Job job = buildJobFromExtraction(jobFields, jobId, text);
         {
             std::lock_guard<std::mutex> lock(state.db_mutex);
             insert_or_update_job(state.db, job);
         }
-
         std::cout << "[INFO] Import: job inserted — " << jobId << " — " << job.title << std::endl;
 
-        std::string profileContent = loadProfileMarkdown(state.profile_path);
-        if (!profileContent.empty()) {
+        std::string profile = loadProfileMarkdown(state.profile_path);
+        std::string cleaned = cleanTemplateText(job.template_text);
+        if (!profile.empty() && !cleaned.empty()) {
             std::cout << "[INFO] Import: running fit-check for " << jobId << "..." << std::endl;
-            std::string cleaned = cleanTemplateText(job.template_text);
-            if (!cleaned.empty()) {
-                try {
-                    auto result = runFitcheck(cleaned, profileContent, state.system_prompt_template, ai, key);
-                    std::lock_guard<std::mutex> lock(state.db_mutex);
-                    save_fit_result_v2(state.db, jobId, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
-                    std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << result.label << " (" << result.score << ")" << std::endl;
-                } catch (const std::exception& e2) {
-                    std::cerr << "[WARN] Import: fit-check failed for " << jobId << ": " << e2.what() << std::endl;
-                }
+            try {
+                auto result = checkAndSave(state, jobId, cleaned, profile, ai, key, "md_file_profile");
+                std::cout << "[INFO] Import: fit-check complete for " << jobId << " — " << result.label << " (" << result.score << ")" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[WARN] Import: fit-check failed for " << jobId << ": " << e.what() << std::endl;
             }
         }
 
         std::cout << "[INFO] Import: complete — " << jobId << " — " << job.title << std::endl;
-        res.set_content(json{{"ok", true}, {"job_id", jobId}, {"title", job.title}}.dump(), "application/json");
+        sendJson(res, {{"ok", true}, {"job_id", jobId}, {"title", job.title}});
 
     } catch (const std::exception& e) {
         std::cerr << "[ERROR] Import failed: " << e.what() << std::endl;
-        res.status = 500;
-        res.set_content(json{{"error", std::string("Import failed: ") + e.what()}}.dump(), "application/json");
+        sendError(res, 500, std::string("Import failed: ") + e.what());
     }
+}
 
+void generateProfile(AppState& state, const httplib::Request& req, httplib::Response& res) {
+    try {
+        json body = json::parse(req.body);
+
+        if (!body.contains("answers") || !body["answers"].is_array() ||
+            body["answers"].size() != kOnboardingQuestionCount) {
+            sendError(res, 400, "Expected " + std::to_string(kOnboardingQuestionCount) + " answers");
+            return;
+        }
+
+        auto ai_opt = requireAi(state, res);
+        if (!ai_opt) return;
+        const AiSnapshot& ai = *ai_opt;
+        const auto& answers = body["answers"];
+
+        const std::string questions[kOnboardingQuestionCount] = {
+            "CV Drop",
+            "Career Goal (3–5 Years)",
+            "Intrinsic Motivation",
+            "No-Gos",
+            "Tech Skills: Build vs. Tolerate",
+            "Company Type & Region",
+            "Hard Constraints",
+            "Work Style",
+            "What Should the LLM Know That's Not in the CV?"
+        };
+
+        std::string profileText = "Candidate Onboarding Answers:\n\n";
+        for (int i = 0; i < kOnboardingQuestionCount; i++) {
+            profileText += "Q" + std::to_string(i + 1) + ": " + questions[i] + "\n";
+            std::string answer = answers[i].is_string() ? answers[i].get<std::string>() : answers[i].dump();
+            profileText += "A" + std::to_string(i + 1) + ": " + answer + "\n\n";
+        }
+
+        std::string prompt = state.onboarding_prompt + profileText;
+        json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens, ai.temperature, ai.top_p, ai.top_k);
+        if (ai.provider != "ollama_local") request["response_format"] = {{"type", "text"}};
+
+        std::string key = readApiKey(state.api_key, state.api_key_mutex);
+        std::string response = httpPostAI(ai.endpoint, key, request.dump());
+        std::string parsedResponse = parseStreamingResponse(response);
+        if (parsedResponse.empty())
+            throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
+
+        std::string profileMarkdown = extractBlock(parsedResponse, "markdown");
+
+        std::ofstream file(state.profile_path);
+        if (!file.is_open())
+            throw std::runtime_error("Failed to open profile file");
+        file << profileMarkdown;
+
+        sendJson(res, {{"ok", true}});
+
+    } catch (const std::exception& e) {
+        sendError(res, 500, e.what());
+    }
 }

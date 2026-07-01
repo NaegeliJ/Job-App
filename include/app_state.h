@@ -30,10 +30,14 @@ struct AppState {
     ProgressTracker detail_progress;
 
     std::string system_prompt_template;
+    std::string onboarding_prompt;
+    std::string import_prompt;
 
     std::string base_dir;
     std::string config_path;
     std::string system_prompt_path;
+    std::string onboarding_prompt_path;
+    std::string import_prompt_path;
     std::string profile_path;
 };
 

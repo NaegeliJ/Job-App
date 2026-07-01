@@ -28,6 +28,7 @@
 #include "app_state.h"
 #include "scraper.h"
 #include "fitcheck.h"
+#include "response.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -87,6 +88,8 @@ int main(int argc, char* argv[]) {
 
     appState.config_path = appState.base_dir + "/config/config_v2.json";
     appState.system_prompt_path = appState.base_dir + "/config/system_prompt.txt";
+    appState.onboarding_prompt_path = appState.base_dir + "/config/onboarding_prompt.txt";
+    appState.import_prompt_path = appState.base_dir + "/config/import_prompt.txt";
 
     try {
         std::ifstream f(appState.base_dir + "/config/api_keys.json");
@@ -130,6 +133,22 @@ int main(int argc, char* argv[]) {
         std::cout << "[INFO] System prompt loaded" << std::endl;
     }
 
+    {
+        struct { std::string* dest; const std::string* path; const char* label; } prompts[] = {
+            { &appState.onboarding_prompt, &appState.onboarding_prompt_path, "Onboarding prompt" },
+            { &appState.import_prompt,     &appState.import_prompt_path,     "Import prompt" },
+        };
+        for (const auto& p : prompts) {
+            std::ifstream f(*p.path);
+            if (!f.is_open()) {
+                std::cerr << "[ERROR] Cannot open " << *p.path << std::endl;
+                return 1;
+            }
+            p.dest->assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            std::cout << "[INFO] " << p.label << " loaded" << std::endl;
+        }
+    }
+
     // ── SERVER ───────────────────────────────────────────────────────────────
 
     httplib::Server server;
@@ -140,14 +159,14 @@ int main(int argc, char* argv[]) {
     });
 
     server.Get("/api/version", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content(json{{"version", APP_VERSION}}.dump(), "application/json");
+        sendJson(res, {{"version", APP_VERSION}});
     });
 
     server.Get("/api/jobs", [&appState](const httplib::Request&, httplib::Response& res) {
         json result = json::array();
         for (const auto& job : get_all_jobs(appState.db))
             result.push_back(jobRecordToJson(job));
-        res.set_content(result.dump(), "application/json");
+        sendJson(res, result);
     });
 
     server.Post("/api/jobs/update", [&appState](const httplib::Request& req, httplib::Response& res) {
@@ -183,10 +202,9 @@ int main(int argc, char* argv[]) {
                 update_job_field(appState.db, job_id, "application_url", url);
             }
 
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", "bad request"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "bad request"}, {"detail", e.what()}}, 400);
         }
     });
 
@@ -212,10 +230,9 @@ int main(int argc, char* argv[]) {
                 deleted = bulk_soft_delete_by_status(appState.db, status, older_than_days);
             }
 
-            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}, {"deleted", deleted}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", "bad request"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "bad request"}, {"detail", e.what()}}, 400);
         }
     });
 
@@ -223,10 +240,9 @@ int main(int argc, char* argv[]) {
         try {
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             delete_job(appState.db, req.path_params.at("id"));
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "database error"}, {"detail", e.what()}}, 500);
         }
     });
 
@@ -234,10 +250,9 @@ int main(int argc, char* argv[]) {
         try {
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             update_job_field(appState.db, req.path_params.at("id"), "user_status", "deleted");
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "database error"}, {"detail", e.what()}}, 500);
         }
     });
 
@@ -248,10 +263,9 @@ int main(int argc, char* argv[]) {
                 std::lock_guard<std::mutex> lock(appState.db_mutex);
                 restored = restore_all_deleted(appState.db);
             }
-            res.set_content(json{{"ok", true}, {"restored", restored}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}, {"restored", restored}});
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", "database error"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "database error"}, {"detail", e.what()}}, 500);
         }
     });
 
@@ -314,7 +328,7 @@ int main(int argc, char* argv[]) {
         }
 
         std::cout << "[INFO] Scrape completed: " << inserted << " jobs processed" << std::endl;
-        res.set_content(json{{"ok", true}, {"count", inserted}}.dump(), "application/json");
+        sendJson(res, {{"ok", true}, {"count", inserted}});
     });
 
     server.Post("/api/scrape/details", [&appState](const httplib::Request&, httplib::Response& res) {
@@ -325,8 +339,7 @@ int main(int argc, char* argv[]) {
         }
         bool expected = false;
         if (!appState.detail_progress.running.compare_exchange_strong(expected, true)) {
-            res.status = 409;
-            res.set_content(json{{"ok", false}, {"error", "detail fetch already running"}}.dump(), "application/json");
+            sendJson(res, {{"ok", false}, {"error", "detail fetch already running"}}, 409);
             return;
         }
 
@@ -339,16 +352,16 @@ int main(int argc, char* argv[]) {
 
         std::thread(fetchJobDetails, std::move(jobs), appState.db, std::ref(appState.db_mutex), std::ref(appState.detail_progress)).detach();
 
-        res.set_content(json{{"ok", true}, {"status", "background"}, {"count", total}}.dump(), "application/json");
+        sendJson(res, {{"ok", true}, {"status", "background"}, {"count", total}});
     });
 
     server.Get("/api/scrape/details/progress", [&appState](const httplib::Request&, httplib::Response& res) {
-        res.set_content(json{
+        sendJson(res, {
             {"running", appState.detail_progress.running.load()},
             {"done",    appState.detail_progress.done.load()},
             {"total",   appState.detail_progress.total.load()},
             {"failed",  appState.detail_progress.failed.load()}
-        }.dump(), "application/json");
+        });
     });
 
     server.Get("/api/config", [&appState](const httplib::Request&, httplib::Response& res) {
@@ -358,8 +371,7 @@ int main(int argc, char* argv[]) {
             std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
             res.set_content(body, "application/json");
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 500, e.what());
         }
     });
 
@@ -378,10 +390,9 @@ int main(int argc, char* argv[]) {
                 appState.config_v2 = loadConfigV2(appState.config_path);
             }
             std::cout << "[INFO] Config reloaded" << std::endl;
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", "config error"}, {"detail", e.what()}}.dump(), "application/json");
+            sendJson(res, {{"error", "config error"}, {"detail", e.what()}}, 400);
         }
     });
 
@@ -394,7 +405,7 @@ int main(int argc, char* argv[]) {
             {"model",    appState.config_v2.model},
             {"key_set",  !appState.api_key.empty()}
         };
-        res.set_content(result.dump(), "application/json");
+        sendJson(res, result);
     });
 
     server.Post("/api/config/ai", [&appState](const httplib::Request& req, httplib::Response& res) {
@@ -441,151 +452,23 @@ int main(int argc, char* argv[]) {
             }
 
             std::cout << "[INFO] AI config updated: provider=" << provider << " model=" << model << std::endl;
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 400, e.what());
         }
     });
 
     // ── V2 API ENDPOINTS ───────────────────────────────────────────────────────
 
     server.Post("/api/onboarding/complete", [&appState](const httplib::Request& req, httplib::Response& res) {
-        try {
-            json body = json::parse(req.body);
-
-            if (!body.contains("answers") || !body["answers"].is_array() || body["answers"].size() != 9) {
-                res.status = 400;
-                res.set_content(json{{"error", "Expected 9 answers"}}.dump(), "application/json");
-                return;
-            }
-
-            auto ai_opt = resolveAi(appState, res);
-            if (!ai_opt) return;
-
-            const AiSnapshot& ai = *ai_opt;
-            const auto& answers = body["answers"];
-
-            std::string questions[] = {
-                "CV Drop",
-                "Career Goal (3–5 Years)",
-                "Intrinsic Motivation",
-                "No-Gos",
-                "Tech Skills: Build vs. Tolerate",
-                "Company Type & Region",
-                "Hard Constraints",
-                "Work Style",
-                "What Should the LLM Know That's Not in the CV?"
-            };
-
-            std::string profileText = "Candidate Onboarding Answers:\n\n";
-            for (int i = 0; i < 9; i++) {
-                profileText += "Q" + std::to_string(i+1) + ": " + questions[i] + "\n";
-                std::string answer = answers[i].is_string() ? answers[i].get<std::string>() : answers[i].dump();
-                profileText += "A" + std::to_string(i+1) + ": " + answer + "\n\n";
-            }
-
-            std::string prompt = R"(Generate a comprehensive user profile in markdown format from the candidate answers below.
-
-TEMPLATE STRUCTURE TO FOLLOW:
-# User Profile
-
-Generated: [TIMESTAMP]
-Last Updated: [TIMESTAMP]
-Version: [HASH]
-
----
-
-## Q1: CV Drop
-[Answer]
-
----
-
-## Q2: Career Goal (3–5 Years)
-[Answer]
-
----
-
-## Q3: Intrinsic Motivation
-[Answer]
-
----
-
-## Q4: No-Gos
-[Answer]
-
----
-
-## Q5: Tech Skills: Build vs. Tolerate
-[Answer]
-
----
-
-## Q6: Company Type & Region
-[Answer]
-
----
-
-## Q7: Hard Constraints
-[Answer]
-
----
-
-## Q8: Work Style
-[Answer]
-
----
-
-## Q9: What Should the LLM Know That's Not in the CV?
-[Answer]
-
----
-
-## Synthesized Narrative
-[Auto-generated from all answers above. Combine into cohesive paragraph for job assessment.]
-
-[EXAMPLE NARRATIVE]
-[Generated narrative]
-
----
-
-*This profile is used by the AI to assess job fit. Edit any section above,
-then trigger a profile refresh to update the narrative.*
-)";
-
-            prompt += profileText;
-
-            json request = buildAiRequest(ai.provider, ai.model, prompt, ai.max_tokens, ai.temperature, ai.top_p, ai.top_k);
-
-            if (ai.provider != "ollama_local") request["response_format"] = {{"type", "text"}};
-
-            std::string response = httpPostAI(ai.endpoint, appState.api_key, request.dump());
-            std::string parsedResponse = parseStreamingResponse(response);
-
-            if (parsedResponse.empty())
-                throw std::runtime_error("Empty parsed response from AI (httpPostAI succeeded but parse failed)");
-
-            std::string profileMarkdown = extractBlock(parsedResponse, "markdown");
-
-            std::ofstream file(appState.profile_path);
-            if (!file.is_open())
-                throw std::runtime_error("Failed to open profile file");
-            file << profileMarkdown;
-
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
-
-        } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", std::string(e.what())}}.dump(), "application/json");
-        }
+        generateProfile(appState, req, res);
     });
 
     server.Get("/api/profile", [&appState](const httplib::Request&, httplib::Response& res) {
         std::ifstream file(appState.profile_path);
 
         if (!file.is_open()) {
-            res.status = 404;
-            res.set_content(json{{"error", "No profile found"}}.dump(), "application/json");
+            sendError(res, 404, "No profile found");
             return;
         }
 
@@ -612,95 +495,23 @@ then trigger a profile refresh to update the narrative.*
             file << content;
             file.close();
 
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 400, e.what());
         }
     });
 
     server.Post("/api/fitcheck", [&appState](const httplib::Request&, httplib::Response& res) {
-        std::string content = loadProfileMarkdown(appState.profile_path);
-        if (content.empty()) {
-            res.status = 400;
-            res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
-            return;
-        }
-
-        auto ai_opt = resolveAi(appState, res);
-        if (!ai_opt) return;
-        const AiSnapshot& ai = *ai_opt;
-        std::string key = readApiKey(appState.api_key, appState.api_key_mutex);
-
-        int fitcheck_limit;
-        { std::shared_lock<std::shared_mutex> lock(appState.config_v2_mutex); fitcheck_limit = appState.config_v2.fitcheck_limit; }
-
-        std::vector<JobRecord> jobs;
-        {
-            std::lock_guard<std::mutex> lock(appState.db_mutex);
-            jobs = get_jobs_needing_fitcheck_v2(appState.db, fitcheck_limit);
-        }
-
-        std::cout << "[INFO] Starting fit-check for " << jobs.size() << " jobs" << std::endl;
-
-        appState.fitcheck_progress.done    = 0;
-        appState.fitcheck_progress.failed  = 0;
-        appState.fitcheck_progress.total   = static_cast<int>(jobs.size());
-        appState.fitcheck_progress.running = true;
-
-        int checked = 0, failed = 0;
-        try {
-            for (auto& job : jobs) {
-                std::string cleaned = cleanTemplateText(job.template_text);
-                if (cleaned.empty()) {
-                    std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
-                    failed++;
-                    appState.fitcheck_progress.failed++;
-                    appState.fitcheck_progress.done++;
-                    continue;
-                }
-                try {
-                    auto result = runFitcheck(cleaned, content, appState.system_prompt_template, ai, key);
-                    {
-                        std::lock_guard<std::mutex> lock(appState.db_mutex);
-                        save_fit_result_v2(appState.db, job.job_id, result.score, result.label, result.summary, result.reasoning, "md_file_profile");
-                    }
-                    checked++;
-                    appState.fitcheck_progress.done++;
-                    std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
-                } catch (const FatalAiError& e) {
-                    if (e.code() == "invalid_api_key" || e.code() == "no_credits")
-                        throw;
-                    std::cerr << "[WARN] Transient AI error for " << job.job_id << ": " << e.what() << std::endl;
-                    failed++;
-                    appState.fitcheck_progress.failed++;
-                    appState.fitcheck_progress.done++;
-                } catch (const std::exception& e) {
-                    std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
-                    failed++;
-                    appState.fitcheck_progress.failed++;
-                    appState.fitcheck_progress.done++;
-                }
-            }
-        } catch (const FatalAiError& e) {
-            std::cerr << "[ERROR] Fatal AI error during fit-check: " << e.what() << std::endl;
-            appState.fitcheck_progress.running = false;
-            res.status = 500;
-            res.set_content(json{{"ok", false}, {"error_code", e.code()}, {"error", e.what()}}.dump(), "application/json");
-            return;
-        }
-
-        appState.fitcheck_progress.running = false;
-        res.set_content(json{{"ok", true}, {"checked", checked}, {"failed", failed}}.dump(), "application/json");
+        runBatchFitcheck(appState, res);
     });
 
     server.Get("/api/fitcheck/progress", [&appState](const httplib::Request&, httplib::Response& res) {
-        res.set_content(json{
+        sendJson(res, {
             {"running", appState.fitcheck_progress.running.load()},
             {"done",    appState.fitcheck_progress.done.load()},
             {"total",   appState.fitcheck_progress.total.load()},
             {"failed",  appState.fitcheck_progress.failed.load()}
-        }.dump(), "application/json");
+        });
     });
 
     server.Post("/api/jobs/:id/fitcheck", [&appState](const httplib::Request& req, httplib::Response& res) {
@@ -709,8 +520,7 @@ then trigger a profile refresh to update the narrative.*
 
         std::string profileContent = loadProfileMarkdown(appState.profile_path);
         if (profileContent.empty()) {
-            res.status = 400;
-            res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
+            sendError(res, 400, "No profile found. Complete onboarding first.");
             return;
         }
 
@@ -721,43 +531,35 @@ then trigger a profile refresh to update the narrative.*
         }
 
         if (!template_text) {
-            res.status = 404;
-            res.set_content(json{{"error", "Job not found"}}.dump(), "application/json");
+            sendError(res, 404, "Job not found");
             return;
         }
 
         std::string cleaned = cleanTemplateText(*template_text);
         if (cleaned.empty()) {
-            res.status = 400;
-            res.set_content(json{{"error", "Job has no description text"}}.dump(), "application/json");
+            sendError(res, 400, "Job has no description text");
             return;
         }
 
-        auto ai_opt = resolveAi(appState, res);
+        auto ai_opt = requireAi(appState, res);
         if (!ai_opt) return;
         const AiSnapshot& ai = *ai_opt;
         std::string key = readApiKey(appState.api_key, appState.api_key_mutex);
 
         try {
-            auto result = runFitcheck(cleaned, profileContent, appState.system_prompt_template, ai, key);
-            {
-                std::lock_guard<std::mutex> lock(appState.db_mutex);
-                save_fit_result_v2(appState.db, job_id, result.score, result.label, result.summary, result.reasoning, "md_profile");
-            }
-            res.set_content(json{
+            auto result = checkAndSave(appState, job_id, cleaned, profileContent, ai, key, "md_profile");
+            sendJson(res, {
                 {"fit_score",     result.score},
                 {"fit_label",     result.label},
                 {"fit_summary",   result.summary},
                 {"fit_reasoning", result.reasoning}
-            }.dump(), "application/json");
+            });
             std::cout << "[INFO] Fitcheck completed for job: " << job_id << std::endl;
 
         } catch (const FatalAiError& e) {
-            res.status = 500;
-            res.set_content(json{{"error", std::string(e.what())}, {"error_code", e.code()}}.dump(), "application/json");
+            sendJson(res, {{"error", std::string(e.what())}, {"error_code", e.code()}}, 500);
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", std::string("Fit-check failed: ") + e.what()}}.dump(), "application/json");
+            sendError(res, 500, std::string("Fit-check failed: ") + e.what());
         }
     });
 
@@ -772,20 +574,18 @@ then trigger a profile refresh to update the narrative.*
             body = json::parse(req.body);
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Import: invalid JSON body" << std::endl;
-            res.status = 400;
-            res.set_content(json{{"error", "Invalid JSON body"}}.dump(), "application/json");
+            sendError(res, 400, "Invalid JSON body");
             return;
         }
 
         std::string text = body.value("text", "");
         if (text.size() < 50) {
             std::cerr << "[ERROR] Import: text too short (" << text.size() << " chars)" << std::endl;
-            res.status = 400;
-            res.set_content(json{{"error", "Text too short — paste a full job posting"}}.dump(), "application/json");
+            sendError(res, 400, "Text too short — paste a full job posting");
             return;
         }
 
-        auto ai_opt = resolveAi(appState, res);
+        auto ai_opt = requireAi(appState, res);
         if (!ai_opt) return;
         const AiSnapshot& ai = *ai_opt;
         std::string key = readApiKey(appState.api_key, appState.api_key_mutex);
@@ -807,10 +607,9 @@ then trigger a profile refresh to update the narrative.*
                 deleted = bulk_hard_delete_by_fit_label(appState.db, fit_label);
             }
             std::cout << "[ADMIN] Hard-deleted " << deleted << " jobs with fit_label=" << fit_label << std::endl;
-            res.set_content(json{{"ok", true}, {"deleted", deleted}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}, {"deleted", deleted}});
         } catch (const std::exception& e) {
-            res.status = 400;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 400, e.what());
         }
     });
 
@@ -821,11 +620,10 @@ then trigger a profile refresh to update the narrative.*
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             delete_job(appState.db, job_id);
             std::cout << "[ADMIN] Deleted job " << job_id << std::endl;
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
             std::cerr << "[ADMIN] Delete job failed: " << e.what() << std::endl;
-            res.status = 500;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 500, e.what());
         }
     });
 
@@ -836,11 +634,10 @@ then trigger a profile refresh to update the narrative.*
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             clear_fit_data(appState.db, job_id);
             std::cout << "[ADMIN] Cleared fit data for job " << job_id << std::endl;
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
             std::cerr << "[ADMIN] Clear fit data failed: " << e.what() << std::endl;
-            res.status = 500;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 500, e.what());
         }
     });
 
@@ -850,11 +647,10 @@ then trigger a profile refresh to update the narrative.*
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             clear_all_fit_data(appState.db);
             std::cout << "[ADMIN] Cleared all fit data" << std::endl;
-            res.set_content(json{{"ok", true}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}});
         } catch (const std::exception& e) {
             std::cerr << "[ADMIN] Clear all fit data failed: " << e.what() << std::endl;
-            res.status = 500;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 500, e.what());
         }
     });
 
@@ -864,8 +660,7 @@ then trigger a profile refresh to update the narrative.*
 
         std::string profile = loadProfileMarkdown(appState.profile_path);
         if (profile.empty()) {
-            res.status = 400;
-            res.set_content(json{{"error", "No profile found"}}.dump(), "application/json");
+            sendError(res, 400, "No profile found");
             return;
         }
         {
@@ -880,33 +675,26 @@ then trigger a profile refresh to update the narrative.*
         }
 
         if (!templateText) {
-            res.status = 404;
-            res.set_content(json{{"error", "Job not found"}}.dump(), "application/json");
+            sendError(res, 404, "Job not found");
             return;
         }
 
-        auto ai_opt = resolveAi(appState, res);
+        auto ai_opt = requireAi(appState, res);
         if (!ai_opt) return;
         const AiSnapshot& ai = *ai_opt;
         std::string key = readApiKey(appState.api_key, appState.api_key_mutex);
 
         std::string cleaned = cleanTemplateText(*templateText);
         if (cleaned.empty()) {
-            res.status = 400;
-            res.set_content(json{{"error", "Job has no description text"}}.dump(), "application/json");
+            sendError(res, 400, "Job has no description text");
             return;
         }
 
         try {
-            auto result = runFitcheck(cleaned, profile, appState.system_prompt_template, ai, key);
-            {
-                std::lock_guard<std::mutex> lock(appState.db_mutex);
-                save_fit_result_v2(appState.db, job_id, result.score, result.label, result.summary, result.reasoning, "admin_recheck");
-            }
-            res.set_content(json{{"ok", true}, {"fit_score", result.score}, {"fit_label", result.label}}.dump(), "application/json");
+            auto result = checkAndSave(appState, job_id, cleaned, profile, ai, key, "admin_recheck");
+            sendJson(res, {{"ok", true}, {"fit_score", result.score}, {"fit_label", result.label}});
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", std::string("Recheck failed: ") + e.what()}}.dump(), "application/json");
+            sendError(res, 500, std::string("Recheck failed: ") + e.what());
         }
     });
 
@@ -915,10 +703,9 @@ then trigger a profile refresh to update the narrative.*
         try {
             std::lock_guard<std::mutex> lock(appState.db_mutex);
             clear_all_fit_data(appState.db);
-            res.set_content(json{{"ok", true}, {"message", "All fit data cleared. Trigger /api/fitcheck to recheck."}}.dump(), "application/json");
+            sendJson(res, {{"ok", true}, {"message", "All fit data cleared. Trigger /api/fitcheck to recheck."}});
         } catch (const std::exception& e) {
-            res.status = 500;
-            res.set_content(json{{"error", e.what()}}.dump(), "application/json");
+            sendError(res, 500, e.what());
         }
     });
 

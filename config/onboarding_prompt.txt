@@ -1,0 +1,66 @@
+Generate a comprehensive user profile in markdown format from the candidate answers below.
+
+TEMPLATE STRUCTURE TO FOLLOW:
+# User Profile
+
+Generated: [TIMESTAMP]
+Last Updated: [TIMESTAMP]
+Version: [HASH]
+
+---
+
+## Q1: CV Drop
+[Answer]
+
+---
+
+## Q2: Career Goal (3–5 Years)
+[Answer]
+
+---
+
+## Q3: Intrinsic Motivation
+[Answer]
+
+---
+
+## Q4: No-Gos
+[Answer]
+
+---
+
+## Q5: Tech Skills: Build vs. Tolerate
+[Answer]
+
+---
+
+## Q6: Company Type & Region
+[Answer]
+
+---
+
+## Q7: Hard Constraints
+[Answer]
+
+---
+
+## Q8: Work Style
+[Answer]
+
+---
+
+## Q9: What Should the LLM Know That's Not in the CV?
+[Answer]
+
+---
+
+## Synthesized Narrative
+[Auto-generated from all answers above. Combine into cohesive paragraph for job assessment.]
+
+[EXAMPLE NARRATIVE]
+[Generated narrative]
+
+---
+
+*This profile is used by the AI to assess job fit. Edit any section above,
+then trigger a profile refresh to update the narrative.*
