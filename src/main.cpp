@@ -70,8 +70,6 @@ int main(int argc, char* argv[]) {
 
     AppState appState;
 
-
-
     fs::path root;
     try {
         root = fs::canonical(argv[0]).parent_path();
