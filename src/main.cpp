@@ -31,15 +31,6 @@
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
-static std::string base_dir;
-static std::string s_config_path;
-static std::string s_system_prompt_path;
-
-static const std::string& configPath() { return s_config_path; }
-static const std::string& systemPromptPath() { return s_system_prompt_path; }
-static std::string profilePath() { return base_dir + "/config/user_profile.md"; }
-
-
 // ── JSON / JOB HELPERS ───────────────────────────────────────────────────────
 
 json jobRecordToJson(const JobRecord& job) {
@@ -119,6 +110,7 @@ int main(int argc, char* argv[]) {
     AppState appState;
 
 
+
     fs::path root;
     try {
         root = fs::canonical(argv[0]).parent_path();
@@ -128,13 +120,14 @@ int main(int argc, char* argv[]) {
     if (root.filename().string().rfind("cmake-build-", 0) == 0) { // CLion output dir, step up
         root = root.parent_path();
     }
-    base_dir = root.string();
+    appState.base_dir = root.string();
+    appState.profile_path = appState.base_dir + "/config/user_profile.md";
 
-    s_config_path = base_dir + "/config/config_v2.json";
-    s_system_prompt_path = base_dir + "/config/system_prompt.txt";
+    appState.config_path = appState.base_dir + "/config/config_v2.json";
+    appState.system_prompt_path = appState.base_dir + "/config/system_prompt.txt";
 
     try {
-        std::ifstream f(base_dir + "/config/api_keys.json");
+        std::ifstream f(appState.base_dir + "/config/api_keys.json");
         json keys = json::parse(f);
         appState.api_key = keys.value("api_key", "");
         std::cout << "[INFO] API keys loaded" << std::endl;
@@ -143,42 +136,33 @@ int main(int argc, char* argv[]) {
     }
 
     std::error_code ec;
-    fs::create_directories(base_dir + "/data", ec);  // sqlite creates the file, not the dir
-    if (sqlite3_open((base_dir + "/data/jobs_v2.db").c_str(), &appState.db) != SQLITE_OK) {
+    fs::create_directories(appState.base_dir + "/data", ec);  // sqlite creates the file, not the dir
+    if (sqlite3_open((appState.base_dir + "/data/jobs_v2.db").c_str(), &appState.db) != SQLITE_OK) {
         std::cerr << "[Error] Cannot open database v2: " << sqlite3_errmsg(appState.db) << std::endl;
         return 1;
     }
     std::cout << "[INFO] Database v2 opened" << std::endl;
     db_init(appState.db);
     db_v2_init(appState.db);
-    std::mutex db_mutex;
 
-    std::mutex api_key_mutex;
-
-    ProgressTracker fitcheck_progress;
-    ProgressTracker detail_progress;
-
-    ConfigV2 config_v2;
-    std::shared_mutex config_v2_mutex;
     try {
-        config_v2 = loadConfigV2(configPath());
+        appState.config_v2 = loadConfigV2(appState.config_path);
         std::cout << "[INFO] Config v2 loaded" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[WARN] Could not load config_v2.json: " << e.what() << std::endl;
     }
 
-    std::string system_prompt_template;
     {
-        std::ifstream f(systemPromptPath());
+        std::ifstream f(appState.system_prompt_path);
         if (!f.is_open()) {
-            std::cerr << "[ERROR] Cannot open " << systemPromptPath() << std::endl;
+            std::cerr << "[ERROR] Cannot open " << appState.system_prompt_path << std::endl;
             return 1;
         }
-        system_prompt_template.assign((std::istreambuf_iterator<char>(f)),
+        appState.system_prompt_template.assign((std::istreambuf_iterator<char>(f)),
                                        std::istreambuf_iterator<char>());
-        if (system_prompt_template.find("{{profile}}") == std::string::npos ||
-            system_prompt_template.find("{{jobText}}") == std::string::npos) {
-            std::cerr << "[ERROR] " << systemPromptPath() << " missing {{profile}} or {{jobText}} placeholders" << std::endl;
+        if (appState.system_prompt_template.find("{{profile}}") == std::string::npos ||
+            appState.system_prompt_template.find("{{jobText}}") == std::string::npos) {
+            std::cerr << "[ERROR] " << appState.system_prompt_path << " missing {{profile}} or {{jobText}} placeholders" << std::endl;
             return 1;
         }
         std::cout << "[INFO] System prompt loaded" << std::endl;
@@ -188,7 +172,7 @@ int main(int argc, char* argv[]) {
 
     httplib::Server server;
 
-    server.set_mount_point("/", (base_dir + "/frontend").c_str());
+    server.set_mount_point("/", (appState.base_dir + "/frontend").c_str());
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/index.html");
     });
@@ -405,9 +389,9 @@ int main(int argc, char* argv[]) {
         }.dump(), "application/json");
     });
 
-    server.Get("/api/config", [](const httplib::Request&, httplib::Response& res) {
+    server.Get("/api/config", [&appState](const httplib::Request&, httplib::Response& res) {
         try {
-            std::ifstream f(configPath());
+            std::ifstream f(appState.config_path);
             if (!f.is_open()) throw std::runtime_error("Could not open config_v2.json");
             std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
             res.set_content(body, "application/json");
@@ -422,14 +406,14 @@ int main(int argc, char* argv[]) {
             json incoming = json::parse(req.body);
             validateConfigV2(incoming);
 
-            std::ofstream f(configPath());
+            std::ofstream f(appState.config_path);
             if (!f.is_open()) throw std::runtime_error("Could not write config_v2.json");
             f << incoming.dump(2);
             f.close();
 
             {
                 std::unique_lock<std::shared_mutex> lock(appState.config_v2_mutex);
-                appState.config_v2 = loadConfigV2(configPath());
+                appState.config_v2 = loadConfigV2(appState.config_path);
             }
             std::cout << "[INFO] Config reloaded" << std::endl;
             res.set_content(json{{"ok", true}}.dump(), "application/json");
@@ -466,14 +450,14 @@ int main(int argc, char* argv[]) {
 
             // Always persist for ollama_local so we can clear a previously saved key.
             if (provider == "ollama_local" || !apiKey.empty()) {
-                std::ofstream keyFile(base_dir + "/config/api_keys.json");
+                std::ofstream keyFile(appState.base_dir + "/config/api_keys.json");
                 if (!keyFile.is_open()) throw std::runtime_error("Could not write api_keys.json");
                 keyFile << json{{"api_key", apiKey}}.dump(2);
             }
 
             json configJson;
             {
-                std::ifstream f(configPath());
+                std::ifstream f(appState.config_path);
                 if (!f.is_open()) throw std::runtime_error("Could not read config_v2.json");
                 configJson = json::parse(f);
             }
@@ -481,13 +465,13 @@ int main(int argc, char* argv[]) {
             configJson["fitcheck"]["endpoint"] = endpoint;
             configJson["fitcheck"]["model"]    = model;
             {
-                std::ofstream f(configPath());
+                std::ofstream f(appState.config_path);
                 if (!f.is_open()) throw std::runtime_error("Could not write config_v2.json");
                 f << configJson.dump(2);
             }
             {
                 std::unique_lock<std::shared_mutex> cfglock(appState.config_v2_mutex);
-                appState.config_v2 = loadConfigV2(configPath());
+                appState.config_v2 = loadConfigV2(appState.config_path);
             }
             if (provider == "ollama_local" || !apiKey.empty()) {
                 std::lock_guard<std::mutex> keylock(appState.api_key_mutex);
@@ -627,7 +611,7 @@ then trigger a profile refresh to update the narrative.*
 
             std::string profileMarkdown = extractBlock(parsedResponse, "markdown");
 
-            std::ofstream file(profilePath());
+            std::ofstream file(appState.profile_path);
             if (!file.is_open())
                 throw std::runtime_error("Failed to open profile file");
             file << profileMarkdown;
@@ -640,8 +624,8 @@ then trigger a profile refresh to update the narrative.*
         }
     });
 
-    server.Get("/api/profile", [](const httplib::Request&, httplib::Response& res) {
-        std::ifstream file(profilePath());
+    server.Get("/api/profile", [&appState](const httplib::Request&, httplib::Response& res) {
+        std::ifstream file(appState.profile_path);
 
         if (!file.is_open()) {
             res.status = 404;
@@ -657,7 +641,7 @@ then trigger a profile refresh to update the narrative.*
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     });
 
-    server.Post("/api/profile/save", [](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/profile/save", [&appState](const httplib::Request& req, httplib::Response& res) {
         try {
             json body = json::parse(req.body);
             std::string content = body.value("content", "");
@@ -665,7 +649,7 @@ then trigger a profile refresh to update the narrative.*
             if (content.size() > 128 * 1024)
                 throw std::runtime_error("Profile too large (max 128 KB)");
 
-            std::ofstream file(profilePath());
+            std::ofstream file(appState.profile_path);
             if (!file.is_open())
                 throw std::runtime_error("Failed to open profile file");
 
@@ -680,7 +664,7 @@ then trigger a profile refresh to update the narrative.*
     });
 
     server.Post("/api/fitcheck", [&appState](const httplib::Request&, httplib::Response& res) {
-        std::string content = loadProfileMarkdown(profilePath());
+        std::string content = loadProfileMarkdown(appState.profile_path);
         if (content.empty()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
@@ -771,7 +755,7 @@ then trigger a profile refresh to update the narrative.*
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Fitcheck triggered for job: " << job_id << std::endl;
 
-        std::string profileContent = loadProfileMarkdown(profilePath());
+        std::string profileContent = loadProfileMarkdown(appState.profile_path);
         if (profileContent.empty()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found. Complete onboarding first."}}.dump(), "application/json");
@@ -962,7 +946,7 @@ then trigger a profile refresh to update the narrative.*
 
             std::cout << "[INFO] Import: job inserted — " << jobId << " — " << job.title << std::endl;
 
-            std::string profileContent = loadProfileMarkdown(profilePath());
+            std::string profileContent = loadProfileMarkdown(appState.profile_path);
             if (!profileContent.empty()) {
                 std::cout << "[INFO] Import: running fit-check for " << jobId << "..." << std::endl;
                 std::string cleaned = cleanTemplateText(job.template_text);
@@ -1057,7 +1041,7 @@ then trigger a profile refresh to update the narrative.*
         std::string job_id = req.path_params.at("id");
         std::cout << "[INFO] Admin recheck triggered for job: " << job_id << std::endl;
 
-        std::string profile = loadProfileMarkdown(profilePath());
+        std::string profile = loadProfileMarkdown(appState.profile_path);
         if (profile.empty()) {
             res.status = 400;
             res.set_content(json{{"error", "No profile found"}}.dump(), "application/json");
