@@ -8,8 +8,6 @@
 #endif
 #include <iostream>
 #include <fstream>
-#include <sstream>
-#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -163,8 +161,13 @@ int main(int argc, char* argv[]) {
     });
 
     server.Get("/api/jobs", [&appState](const httplib::Request&, httplib::Response& res) {
+        std::vector<JobRecord> jobs;
+        {
+            std::lock_guard<std::mutex> lock(appState.db_mutex);
+            jobs = get_all_jobs(appState.db);
+        }
         json result = json::array();
-        for (const auto& job : get_all_jobs(appState.db))
+        for (const auto& job : jobs)
             result.push_back(jobRecordToJson(job));
         sendJson(res, result);
     });
