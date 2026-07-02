@@ -119,6 +119,43 @@ std::optional<AiSnapshot> requireAi(AppState& state, httplib::Response& res) {
     return ai;
 }
 
+std::optional<FitcheckResult> fitcheckSingleJob(AppState& state, httplib::Response& res,
+                                                const std::string& job_id, bool clear_first,
+                                                const std::string& source) {
+    std::string profile = loadProfileMarkdown(state.profile_path);
+    if (profile.empty()) {
+        sendError(res, 400, "No profile found. Complete onboarding first.");
+        return std::nullopt;
+    }
+
+    if (clear_first) {
+        std::lock_guard<std::mutex> lock(state.db_mutex);
+        clear_fit_data(state.db, job_id);
+    }
+
+    std::optional<std::string> template_text;
+    {
+        std::lock_guard<std::mutex> lock(state.db_mutex);
+        template_text = get_job_template_text(state.db, job_id);
+    }
+    if (!template_text) {
+        sendError(res, 404, "Job not found");
+        return std::nullopt;
+    }
+
+    std::string cleaned = cleanTemplateText(*template_text);
+    if (cleaned.empty()) {
+        sendError(res, 400, "Job has no description text");
+        return std::nullopt;
+    }
+
+    auto ai = requireAi(state, res);
+    if (!ai) return std::nullopt;
+    std::string key = readApiKey(state.api_key, state.api_key_mutex);
+
+    return checkAndSave(state, job_id, cleaned, profile, *ai, key, source);
+}
+
 static void recordFailure(ProgressTracker& progress) {
     progress.failed++;
     progress.done++;

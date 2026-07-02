@@ -275,3 +275,65 @@ void fetchJobDetails(std::vector<Job> jobs, sqlite3* db, std::mutex& db_mutex, P
     progress.running = false;
     std::cout << "[INFO] Background detail fetch done: " << updated << " updated, " << failed << " failed" << std::endl;
 }
+
+int scrapeAllSources(AppState& state) {
+    std::cout << "[INFO] Starting job scrape operation" << std::endl;
+    int inserted = 0;
+
+    std::vector<std::string> queries;
+    int rows;
+    bool jobsch_enabled;
+    ConfigV2 linkedInConfig;
+    {
+        std::shared_lock<std::shared_mutex> lock(state.config_v2_mutex);
+        jobsch_enabled = state.config_v2.scrape_enabled;
+        queries        = state.config_v2.scrape_queries;
+        rows           = state.config_v2.scrape_rows;
+        linkedInConfig = state.config_v2;
+    }
+
+    if (jobsch_enabled) for (const auto& q : queries) {
+        rateLimitSleep();
+        std::string url = "https://job-search-api.jobs.ch/search/semantic?query="
+            + urlEncode(q) + "&rows=" + std::to_string(rows) + "&page=1";
+        try {
+            json searchData = json::parse(httpGet(url));
+            auto documents  = searchData["documents"];
+            std::cout << "[INFO] Query: " << q << " - " << documents.size() << " results" << std::endl;
+
+            for (auto& doc : documents) {
+                std::lock_guard<std::mutex> lock(state.db_mutex);
+                insert_or_update_job(state.db, jobFromJson(doc));
+                inserted++;
+            }
+            {
+                std::lock_guard<std::mutex> lock(state.db_mutex);
+                delete_expired_jobs(state.db);
+            }
+
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] Failed to process search results for query '" << q
+                      << "': " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "[ERROR] Unknown error processing query: " << q << std::endl;
+        }
+    }
+
+    if (linkedInConfig.linkedin_enabled) {
+        std::cout << "[LI] Starting LinkedIn scrape" << std::endl;
+        try {
+            auto linkedInJobs = scrapeLinkedIn(linkedInConfig);
+            for (auto& job : linkedInJobs) {
+                std::lock_guard<std::mutex> lock(state.db_mutex);
+                insert_or_update_job(state.db, job);
+                inserted++;
+            }
+            std::cout << "[LI] Inserted " << linkedInJobs.size() << " LinkedIn jobs" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "[LI] Scrape error: " << e.what() << std::endl;
+        }
+    }
+
+    std::cout << "[INFO] Scrape completed: " << inserted << " jobs processed" << std::endl;
+    return inserted;
+}

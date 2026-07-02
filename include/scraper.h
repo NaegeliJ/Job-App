@@ -14,6 +14,7 @@ std::string httpGet(const std::string& url, long* out_status = nullptr);
 std::vector<Job> scrapeLinkedIn(const ConfigV2& cfg);
 Job jobFromJson(const nlohmann::json& data);
 void fetchJobDetails(std::vector<Job> jobs, sqlite3* db, std::mutex& db_mutex, ProgressTracker& progress);
+int scrapeAllSources(AppState& state);
 
 
 #endif

@@ -15,6 +15,12 @@ FitcheckResult checkAndSave(AppState& state, const std::string& job_id, const st
                             const std::string& profile, const AiSnapshot& ai, const std::string& api_key,
                             const std::string& source);
 
+// Shared single-job flow: sends the error response and returns nullopt on
+// precondition failures; lets checkAndSave exceptions propagate to the caller.
+std::optional<FitcheckResult> fitcheckSingleJob(AppState& state, httplib::Response& res,
+                                                const std::string& job_id, bool clear_first,
+                                                const std::string& source);
+
 void runBatchFitcheck(AppState& state, httplib::Response& res);
 
 std::optional<AiSnapshot> requireAi(AppState& state, httplib::Response& res);

@@ -36,8 +36,13 @@ struct AiSnapshot {
 };
 
 
+struct AppState;
+
 ConfigV2 loadConfigV2(const std::string& path);
 void validateConfigV2(const nlohmann::json& c);
+void saveAiConfig(AppState& state, const std::string& provider, const std::string& endpoint,
+                  const std::string& model, const std::string& apiKey);
+std::string readFileOrThrow(const std::string& path);
 AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx);
 bool apiKeyReady(const std::string& api_key, const AiSnapshot& ai);
 std::optional<AiSnapshot> getReadyAi(const std::string& api_key, const ConfigV2& cfg, std::shared_mutex& mtx);
