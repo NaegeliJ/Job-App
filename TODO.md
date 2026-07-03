@@ -13,5 +13,5 @@
   UI: enable toggle + interval input + last/next run display + "Run now" button.
   Prerequisite: main refactor (steps 8–9 below).
 - [ ] Onboarding and general logic is currently heavy tech and swiss focussed
-- [ ] `fitcheck_progress` race — no `compare_exchange` guard like detail-fetch has; two concurrent
-- [ ] `/api/fitcheck` calls clobber counters. Fix separately.
+- [x] `fitcheck_progress` race — no `compare_exchange` guard like detail-fetch has; two concurrent
+  `/api/fitcheck` calls clobber counters. Fix separately.

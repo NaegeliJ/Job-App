@@ -176,6 +176,12 @@ void runBatchFitcheck(AppState& state, httplib::Response& res) {
     int fitcheck_limit;
     { std::shared_lock<std::shared_mutex> lock(state.config_v2_mutex); fitcheck_limit = state.config_v2.fitcheck_limit; }
 
+    bool expected = false;
+    if (!state.fitcheck_progress.running.compare_exchange_strong(expected, true)) {
+        sendJson(res, {{"ok", false}, {"error", "fit-check already running"}}, 409);
+        return;
+    }
+
     std::vector<JobRecord> jobs;
     {
         std::lock_guard<std::mutex> lock(state.db_mutex);
@@ -184,10 +190,9 @@ void runBatchFitcheck(AppState& state, httplib::Response& res) {
 
     std::cout << "[INFO] Starting fit-check for " << jobs.size() << " jobs" << std::endl;
 
-    state.fitcheck_progress.done    = 0;
-    state.fitcheck_progress.failed  = 0;
-    state.fitcheck_progress.total   = static_cast<int>(jobs.size());
-    state.fitcheck_progress.running = true;
+    state.fitcheck_progress.done   = 0;
+    state.fitcheck_progress.failed = 0;
+    state.fitcheck_progress.total  = static_cast<int>(jobs.size());
 
     int checked = 0, failed = 0;
     try {
