@@ -3,8 +3,10 @@
 #include <chrono>
 #include <ctime>
 #include <iostream>
+#include <optional>
 #include <regex>
 #include <thread>
+#include <vector>
 
 #include "html.h"
 #include "http.h"
@@ -336,4 +338,24 @@ int scrapeAllSources(AppState& state) {
 
     std::cout << "[INFO] Scrape completed: " << inserted << " jobs processed" << std::endl;
     return inserted;
+}
+
+std::optional<std::vector<Job>> tryStartDetailFetch(AppState &state){
+    bool expected = false;
+    if (!state.detail_progress.running.compare_exchange_strong(expected, true)){
+        return std::nullopt;
+    }
+
+    std::vector<Job> jobs;
+
+    {
+        std::lock_guard<std::mutex> lock(state.db_mutex);
+        jobs = get_jobs_needing_details(state.db);
+    }
+
+    state.detail_progress.done   = 0;
+    state.detail_progress.failed = 0;
+    state.detail_progress.total  = static_cast<int>(jobs.size());
+    return jobs;
+
 }

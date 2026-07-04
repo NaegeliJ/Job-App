@@ -21,6 +21,20 @@ std::optional<FitcheckResult> fitcheckSingleJob(AppState& state, httplib::Respon
                                                 const std::string& job_id, bool clear_first,
                                                 const std::string& source);
 
+struct BatchFitcheckResult {
+    int checked{0};
+    int failed{0};
+    bool already_running{false};
+    std::string fatal_code;    // non-empty when a fatal AI error aborted the batch
+    std::string fatal_error;
+};
+
+// Batch loop without HTTP coupling, so callers besides the route (e.g. the
+// scheduler) can run it. Preconditions (profile loaded, AI ready) are the
+// caller's job; the fitcheck_progress guard is taken and released here.
+BatchFitcheckResult runBatchFitcheckCore(AppState& state, const std::string& profile,
+                                         const AiSnapshot& ai, const std::string& api_key);
+
 void runBatchFitcheck(AppState& state, httplib::Response& res);
 
 std::optional<AiSnapshot> requireAi(AppState& state, httplib::Response& res);

@@ -26,6 +26,9 @@ struct ConfigV2 {
     double                   temperature{};
     double                   top_p{};
     int                      top_k{};
+
+    bool                     automode_enabled{false};
+    int                      interval_hours{1};
 };
 
 

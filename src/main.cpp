@@ -16,6 +16,7 @@
 #include "config.h"
 #include "db.h"
 #include "routes.h"
+#include "scheduler.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -24,6 +25,7 @@ int main(int argc, char* argv[]) {
     curl_global_init(CURL_GLOBAL_ALL);
 
     AppState appState;
+    Scheduler AutoScheduler(appState);
 
     fs::path root;
     try {
@@ -82,8 +84,12 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[INFO] Prompts loaded" << std::endl;
 
+    if (appState.config_v2.automode_enabled) {
+        AutoScheduler.start();
+    }
+
     httplib::Server server;
-    registerRoutes(server, appState);
+    registerRoutes(server, appState, AutoScheduler);
 
 #ifdef _WIN32
     ShellExecuteA(nullptr, "open", "http://localhost:8080", nullptr, nullptr, SW_SHOWNORMAL);

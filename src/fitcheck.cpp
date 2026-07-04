@@ -161,26 +161,43 @@ static void recordFailure(ProgressTracker& progress) {
     progress.done++;
 }
 
-void runBatchFitcheck(AppState& state, httplib::Response& res) {
-    std::string profile = loadProfileMarkdown(state.profile_path);
-    if (profile.empty()) {
-        sendError(res, 400, "No profile found. Complete onboarding first.");
-        return;
+// Returns true if the job was checked. Transient errors count as failures;
+// fatal AI errors (bad key, no credits) propagate to abort the batch.
+static bool fitcheckOneJob(AppState& state, const JobRecord& job, const std::string& profile,
+                           const AiSnapshot& ai, const std::string& api_key) {
+    std::string cleaned = cleanTemplateText(job.template_text);
+    if (cleaned.empty()) {
+        std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
+        recordFailure(state.fitcheck_progress);
+        return false;
     }
+    try {
+        checkAndSave(state, job.job_id, cleaned, profile, ai, api_key, "md_file_profile");
+        state.fitcheck_progress.done++;
+        return true;
+    } catch (const FatalAiError& e) {
+        if (e.code() == "invalid_api_key" || e.code() == "no_credits")
+            throw;
+        std::cerr << "[WARN] Transient AI error for " << job.job_id << ": " << e.what() << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
+    }
+    recordFailure(state.fitcheck_progress);
+    return false;
+}
 
-    auto ai_opt = requireAi(state, res);
-    if (!ai_opt) return;
-    const AiSnapshot& ai = *ai_opt;
-    std::string key = readApiKey(state.api_key, state.api_key_mutex);
-
-    int fitcheck_limit;
-    { std::shared_lock<std::shared_mutex> lock(state.config_v2_mutex); fitcheck_limit = state.config_v2.fitcheck_limit; }
+BatchFitcheckResult runBatchFitcheckCore(AppState& state, const std::string& profile,
+                                         const AiSnapshot& ai, const std::string& api_key) {
+    BatchFitcheckResult result;
 
     bool expected = false;
     if (!state.fitcheck_progress.running.compare_exchange_strong(expected, true)) {
-        sendJson(res, {{"ok", false}, {"error", "fit-check already running"}}, 409);
-        return;
+        result.already_running = true;
+        return result;
     }
+
+    int fitcheck_limit;
+    { std::shared_lock<std::shared_mutex> lock(state.config_v2_mutex); fitcheck_limit = state.config_v2.fitcheck_limit; }
 
     std::vector<JobRecord> jobs;
     {
@@ -194,42 +211,47 @@ void runBatchFitcheck(AppState& state, httplib::Response& res) {
     state.fitcheck_progress.failed = 0;
     state.fitcheck_progress.total  = static_cast<int>(jobs.size());
 
-    int checked = 0, failed = 0;
     try {
         for (auto& job : jobs) {
-            std::string cleaned = cleanTemplateText(job.template_text);
-            if (cleaned.empty()) {
-                std::cerr << "[WARN] Empty template for job: " << job.job_id << std::endl;
-                failed++;
-                recordFailure(state.fitcheck_progress);
-                continue;
-            }
-            try {
-                checkAndSave(state, job.job_id, cleaned, profile, ai, key, "md_file_profile");
-                checked++;
-                state.fitcheck_progress.done++;
-                std::cout << "[INFO] Fit-checked [" << checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
-            } catch (const FatalAiError& e) {
-                if (e.code() == "invalid_api_key" || e.code() == "no_credits")
-                    throw;
-                std::cerr << "[WARN] Transient AI error for " << job.job_id << ": " << e.what() << std::endl;
-                failed++;
-                recordFailure(state.fitcheck_progress);
-            } catch (const std::exception& e) {
-                std::cerr << "[ERROR] Failed fit-check for " << job.job_id << ": " << e.what() << std::endl;
-                failed++;
-                recordFailure(state.fitcheck_progress);
+            if (fitcheckOneJob(state, job, profile, ai, api_key)) {
+                result.checked++;
+                std::cout << "[INFO] Fit-checked [" << result.checked << "/" << jobs.size() << "]: " << job.job_id << std::endl;
+            } else {
+                result.failed++;
             }
         }
     } catch (const FatalAiError& e) {
         std::cerr << "[ERROR] Fatal AI error during fit-check: " << e.what() << std::endl;
-        state.fitcheck_progress.running = false;
-        sendJson(res, {{"ok", false}, {"error_code", e.code()}, {"error", e.what()}}, 500);
-        return;
+        result.fatal_code  = e.code();
+        result.fatal_error = e.what();
     }
 
     state.fitcheck_progress.running = false;
-    sendJson(res, {{"ok", true}, {"checked", checked}, {"failed", failed}});
+    return result;
+}
+
+void runBatchFitcheck(AppState& state, httplib::Response& res) {
+    std::string profile = loadProfileMarkdown(state.profile_path);
+    if (profile.empty()) {
+        sendError(res, 400, "No profile found. Complete onboarding first.");
+        return;
+    }
+
+    auto ai_opt = requireAi(state, res);
+    if (!ai_opt) return;
+    std::string key = readApiKey(state.api_key, state.api_key_mutex);
+
+    BatchFitcheckResult result = runBatchFitcheckCore(state, profile, *ai_opt, key);
+
+    if (result.already_running) {
+        sendJson(res, {{"ok", false}, {"error", "fit-check already running"}}, 409);
+        return;
+    }
+    if (!result.fatal_code.empty()) {
+        sendJson(res, {{"ok", false}, {"error_code", result.fatal_code}, {"error", result.fatal_error}}, 500);
+        return;
+    }
+    sendJson(res, {{"ok", true}, {"checked", result.checked}, {"failed", result.failed}});
 }
 
 void importJobFromText(AppState& state, httplib::Response& res, const AiSnapshot& ai,

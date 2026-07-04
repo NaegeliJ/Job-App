@@ -14,6 +14,7 @@
 #include "db.h"
 #include "fitcheck.h"
 #include "response.h"
+#include "scheduler.h"
 #include "scraper.h"
 
 using json = nlohmann::json;
@@ -57,7 +58,7 @@ static json progressToJson(const ProgressTracker& progress) {
     };
 }
 
-void registerRoutes(httplib::Server& server, AppState& state) {
+void registerRoutes(httplib::Server& server, AppState& state, Scheduler& scheduler) {
     server.set_mount_point("/", (state.base_dir + "/frontend").c_str());
     server.Get("/", [](const httplib::Request&, httplib::Response& res) {
         res.set_redirect("/index.html");
@@ -215,25 +216,16 @@ void registerRoutes(httplib::Server& server, AppState& state) {
     });
 
     server.Post("/api/scrape/details", [&state](const httplib::Request&, httplib::Response& res) {
-        std::vector<Job> jobs;
-        {
-            std::lock_guard<std::mutex> lock(state.db_mutex);
-            jobs = get_jobs_needing_details(state.db);
-        }
-        bool expected = false;
-        if (!state.detail_progress.running.compare_exchange_strong(expected, true)) {
+
+        auto jobs = tryStartDetailFetch(state);
+        if (!jobs){
             sendJson(res, {{"ok", false}, {"error", "detail fetch already running"}}, 409);
             return;
         }
-
-        int total = static_cast<int>(jobs.size());
+        int total = static_cast<int>(jobs->size());
         std::cout << "[INFO] Launching background detail fetch for " << total << " jobs" << std::endl;
 
-        state.detail_progress.done   = 0;
-        state.detail_progress.failed = 0;
-        state.detail_progress.total  = total;
-
-        std::thread(fetchJobDetails, std::move(jobs), state.db, std::ref(state.db_mutex), std::ref(state.detail_progress)).detach();
+        std::thread(fetchJobDetails, std::move(*jobs), state.db, std::ref(state.db_mutex), std::ref(state.detail_progress)).detach();
 
         sendJson(res, {{"ok", true}, {"status", "background"}, {"count", total}});
     });
@@ -252,7 +244,10 @@ void registerRoutes(httplib::Server& server, AppState& state) {
         }
     });
 
-    server.Post("/api/config", [&state](const httplib::Request& req, httplib::Response& res) {
+    server.Post("/api/config", [&state, &scheduler](const httplib::Request& req, httplib::Response& res) {
+
+        bool automode;
+
         try {
             json incoming = json::parse(req.body);
             validateConfigV2(incoming);
@@ -265,9 +260,13 @@ void registerRoutes(httplib::Server& server, AppState& state) {
             {
                 std::unique_lock<std::shared_mutex> lock(state.config_v2_mutex);
                 state.config_v2 = loadConfigV2(state.config_path);
+                if (state.config_v2.automode_enabled) automode = true; else automode = false;
+
             }
             std::cout << "[INFO] Config reloaded" << std::endl;
+            if (automode) scheduler.start(); else scheduler.stop();
             sendJson(res, {{"ok", true}});
+
         } catch (const std::exception& e) {
             sendJson(res, {{"error", "config error"}, {"detail", e.what()}}, 400);
         }

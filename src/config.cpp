@@ -20,6 +20,9 @@ ConfigV2 loadConfigV2(const std::string& path) {
     cfg.scrape_enabled    = c["scrape"].value("enabled", true);
     cfg.scrape_queries    = c["scrape"]["queries"].get<std::vector<std::string>>();
     cfg.scrape_rows       = c["scrape"]["rows"].get<int>();
+    cfg.automode_enabled  = c.value("automode_enabled", false);
+    cfg.interval_hours    = c.value("interval_hours", 1);
+
 
     if (c.contains("linkedin")) {
         cfg.linkedin_enabled     = c["linkedin"].value("enabled", false);
