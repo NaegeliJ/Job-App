@@ -24,6 +24,8 @@ curl -fsSL "$RAW/update.sh"          -o update.sh
 curl -fsSL "$RAW/config/config_v2.json"           -o config/config_v2.json
 curl -fsSL "$RAW/config/system_prompt.txt"        -o config/system_prompt.txt
 curl -fsSL "$RAW/config/user_profile_template.md" -o config/user_profile_template.md
+curl -fsSL "$RAW/config/onboarding_prompt.txt"     -o config/onboarding_prompt.txt
+curl -fsSL "$RAW/config/import_prompt.txt"         -o config/import_prompt.txt
 chmod +x update.sh
 
 cat > config/api_keys.json << 'EOF'
