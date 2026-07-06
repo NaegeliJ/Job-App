@@ -2,16 +2,22 @@
 
 ## UX improvements
 - [x] Scrape button is finished before detail fetch is
+- [ ] Full DB View / Overview
 
 ## Logic
-- [ ] Periodic auto-scrape + fit-check
-  Plan: background `std::jthread` + `condition_variable`, wakes on interval or config change.
-  Sequence: scrape jobs → fetch details (poll until done) → batch fitcheck.
-  Config fields (in ConfigV2 + config_v2.json): `periodic_enabled`, `periodic_interval_minutes`, `periodic_run_fitcheck`.
-  New files: `include/scheduler.h`, `src/scheduler.cpp`.
-  Expose state via `GET /api/scheduler/status`, manual trigger via `POST /api/scheduler/trigger`.
-  UI: enable toggle + interval input + last/next run display + "Run now" button.
-  Prerequisite: main refactor (steps 8–9 below).
+- [x] Periodic auto-scrape + fit-check (Available for testing now)
+- [ ] Onboarding should test API call before answering stuff
+- [ ] Investigate Local AI reach issue on docker
+- [ ] Investigate bug .exe not working when downloading directly
+- [ ] Onboarding questions not optimal, also tedious to fill out. Maybe voice input or pick questions / answers
+- [ ] Check guards against wrong input of autoscrape hours parameter? 
 - [ ] Onboarding and general logic is currently heavy tech and swiss focussed
-- [x] `fitcheck_progress` race — no `compare_exchange` guard like detail-fetch has; two concurrent
-  `/api/fitcheck` calls clobber counters. Fix separately.
+
+
+
+## Ideas
+- Map view with jobs
+- Data sources and more scraping
+- Range radius / better location filtering
+- Adding a general AI ask me questions logic to ask questions like, does A fit better than B, or maybe even adjust rating due to reason X.
+- Reminder system and generally full pipeline from searching to apply overview, reminders and more
