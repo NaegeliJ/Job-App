@@ -88,10 +88,17 @@ json buildAiRequest(const std::string& provider, const std::string& model, const
     };
     if (isOllamaLocal(provider)) {
         req["format"] = "json";
+        // Native Ollama /api/chat ignores top-level max_tokens/temperature/top_p/top_k
+        // (those are OpenAI-style names) — it reads them from a nested "options" object instead.
+        req.erase("max_tokens");
+        req.erase("temperature");
+        req.erase("top_p");
+        json options = {{"num_predict", max_tokens}, {"temperature", temperature}, {"top_p", top_p}, {"num_ctx", 8192}};
+        if (top_k > 0) options["top_k"] = top_k;
+        req["options"] = options;
     } else if (supportsJsonMode(provider)) {
         req["response_format"] = {{"type", "json_object"}};
     }
-    if (isOllamaLocal(provider) && top_k > 0) req["top_k"] = top_k;
     return req;
 }
 
