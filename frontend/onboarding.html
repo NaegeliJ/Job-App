@@ -347,9 +347,19 @@
       if (!model)    { errEl.textContent = 'Model is required.';    errEl.style.display = 'block'; return; }
 
       btn.disabled = true;
-      btn.textContent = 'Saving...';
+      btn.textContent = 'Testing connection...';
 
       try {
+        const testRes = await fetch('/api/config/ai/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, endpoint, model, api_key: apiKey })
+        });
+        const testData = await testRes.json();
+        if (!testRes.ok) throw new Error(testData.detail || testData.error || 'Connection test failed');
+        if (!testData.ok) throw new Error(testData.detail || 'Connection test failed');
+
+        btn.textContent = 'Saving...';
         const res = await fetch('/api/config/ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

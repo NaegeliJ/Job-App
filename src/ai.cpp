@@ -104,7 +104,7 @@ json buildAiRequest(const std::string& provider, const std::string& model, const
 
 // AI inference calls need a longer timeout — model inference can take several minutes.
 // Retries once on empty response (handles cold-start drops from cloud providers).
-std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body) {
+std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body, long timeoutSeconds) {
     const std::vector<std::string> headers = {
         "Content-Type: application/json",
         "Authorization: Bearer " + apiKey
@@ -118,11 +118,11 @@ std::string httpPostAI(const std::string& url, const std::string& apiKey, const 
         }
     };
     long http_status = 0;
-    std::string response = httpRequest(url, "POST", headers, body, 600L, &http_status);
+    std::string response = httpRequest(url, "POST", headers, body, timeoutSeconds, &http_status);
     const bool is_server_failure = response.empty() || (http_status >= 500 && hasTopLevelError(response));
     if (is_server_failure) {
         std::this_thread::sleep_for(std::chrono::seconds(5));
-        response = httpRequest(url, "POST", headers, body, 600L, &http_status);
+        response = httpRequest(url, "POST", headers, body, timeoutSeconds, &http_status);
     }
     if (http_status == 0) {
         std::this_thread::sleep_for(std::chrono::seconds(15));

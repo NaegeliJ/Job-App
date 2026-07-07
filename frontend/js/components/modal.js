@@ -453,6 +453,25 @@ export async function saveSettings() {
     const model = getStringValue("cfg-ai-model");
     const apiKey = getStringValue("cfg-ai-key");
 
+    // Test connection before saving — skip only when key field was left blank
+    // to intentionally keep the already-stored key (see key-note in renderAiSection).
+    const keyUnchanged = !apiKey && provider !== "ollama_local" && rawAiConfig?.key_set;
+    if (!keyUnchanged) {
+      const testRes = await fetch("/api/config/ai/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, endpoint, model, api_key: apiKey }),
+      });
+      const testData = await testRes.json();
+      if (!testRes.ok || !testData.ok) {
+        showToast(
+          "AI connection failed: " + (testData.detail || testData.error || "unknown"),
+          true,
+        );
+        return;
+      }
+    }
+
     // Save AI provider config
     const aiRes = await fetch("/api/config/ai", {
       method: "POST",

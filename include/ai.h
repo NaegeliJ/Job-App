@@ -24,7 +24,7 @@ private:
 
 std::string parseStreamingResponse(const std::string& raw);
 std::string extractBlock(const std::string& raw, const std::string& lang);
-std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body);
+std::string httpPostAI(const std::string& url, const std::string& apiKey, const std::string& body, long timeoutSeconds = 600L);
 nlohmann::json extractJsonFromResponse(const std::string& raw);
 nlohmann::json buildAiRequest(const std::string& provider, const std::string& model, const std::string& prompt,
                     int max_tokens, double temperature, double top_p, int top_k);

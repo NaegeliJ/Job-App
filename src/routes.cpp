@@ -303,6 +303,29 @@ void registerRoutes(httplib::Server& server, AppState& state, Scheduler& schedul
         }
     });
 
+    server.Post("/api/config/ai/test", [](const httplib::Request& req, httplib::Response& res) {
+        try {
+            json body = json::parse(req.body);
+            std::string provider = body.value("provider", "");
+            std::string endpoint = body.value("endpoint", "");
+            std::string model    = body.value("model", "");
+            std::string apiKey   = body.value("api_key", "");
+
+            if (provider.empty()) throw std::runtime_error("provider required");
+            if (endpoint.empty()) throw std::runtime_error("endpoint required");
+            if (model.empty())    throw std::runtime_error("model required");
+
+            json request = buildAiRequest(provider, model, "Reply with the single word: ok",
+                                           5, 0.0, 1.0, 0);
+            httpPostAI(endpoint, apiKey, request.dump(), 60L);
+            sendJson(res, {{"ok", true}});
+        } catch (const FatalAiError& e) {
+            sendJson(res, {{"ok", false}, {"error", e.code()}, {"detail", e.what()}});
+        } catch (const std::exception& e) {
+            sendError(res, 400, e.what());
+        }
+    });
+
     // ── PROFILE / ONBOARDING ─────────────────────────────────────────────────
 
     server.Post("/api/onboarding/complete", [&state](const httplib::Request& req, httplib::Response& res) {
