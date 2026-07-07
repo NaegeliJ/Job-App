@@ -1,6 +1,7 @@
 #include "config.h"
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 #include "json.hpp"
 #include "app_state.h"
 
@@ -52,6 +53,15 @@ void validateConfigV2(const json& c) {
     };
     require("scrape");
     require("fitcheck");
+
+    if (c.value("interval_hours", 1) < 1) {
+        throw std::runtime_error("Interval hours must be positive");
+    }
+
+    if (c["fitcheck"].value("temperature", 1.0) < 0 || c["fitcheck"].value("temperature", 1.0) > 1){
+        throw std::runtime_error("Temperature must be between 0 and 1");
+
+    }
 }
 
 AiSnapshot snapshotAiConfig(const ConfigV2& cfg, std::shared_mutex& mtx) {

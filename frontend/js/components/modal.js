@@ -511,7 +511,7 @@ export async function saveSettings() {
       showToast("Config saved & reloaded");
       closeSettings();
     } else {
-      showToast("Error: " + (cfgData.error || "unknown"), true);
+      showToast("Error: " + (cfgData.detail || cfgData.error || "unknown"), true);
     }
   } catch (error) {
     showToast("Save failed", true);
