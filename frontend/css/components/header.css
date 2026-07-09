@@ -194,3 +194,35 @@ header {
   white-space:nowrap;
   flex-shrink:0;
 }
+
+@media (max-width: 768px) {
+  header {
+    height: auto;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    gap: 6px;
+    position: relative;
+  }
+  .search-group {
+    position: static;
+    transform: none;
+    width: 100%;
+    flex-wrap: wrap;
+    order: 3;
+    gap: 6px;
+  }
+  .search-wrap {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+  .search-hint { display: none; }
+  .tool-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+  #bulk-delete-btn,
+  #import-job-btn { display: none; }
+  .logo { font-size: 10px; }
+  .status-dot-wrap { margin-left: auto; }
+  .update-notice { display: none !important; }
+}

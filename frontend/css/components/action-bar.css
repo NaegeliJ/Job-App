@@ -105,3 +105,15 @@
   transition: width 0.8s ease;
   pointer-events: none;
 }
+@media (max-width: 768px) {
+  .action-bar {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+  .ab {
+    flex: 1;
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+}

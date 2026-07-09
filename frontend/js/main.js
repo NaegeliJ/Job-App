@@ -197,3 +197,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 export { init, bindEvents };
+// Mobile navigation
+function initMobileNav() {
+  const main = document.querySelector('.main');
+  const backBtn = document.getElementById('mobile-back-btn');
+  if (!backBtn || !main) return;
+
+  // Show detail panel when job selected
+  const origSelectJob = window._selectJob;
+  document.getElementById('job-list').addEventListener('click', () => {
+    if (window.innerWidth <= 768) {
+      main.classList.add('detail-open');
+    }
+  });
+
+  // Back button
+  backBtn.addEventListener('click', () => {
+    main.classList.remove('detail-open');
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initMobileNav);
+if (document.readyState !== 'loading') initMobileNav();
