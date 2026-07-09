@@ -1,10 +1,10 @@
 # Jobs Master
 
-Scrape job listings from jobs.ch or import a job manually, score them against your profile with an LLM, and track applications — all in one self-hosted UI.
+Scrape job listings from jobs.ch, linkedIn or import a job manually, score them against your profile with an LLM, and track applications — all in one self-hosted UI.
 
 ## Quick start
 
-Two ways to run: a standalone Windows exe (no Docker) or the Docker image on Linux.
+Two ways to run: a standalone Windows exe (no Docker) or a Docker image on Linux (recommended).
 
 ### Windows (standalone exe)
 
@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | ba
 
 ### First run
 
-Open **http://localhost:8080** and complete onboarding. Pick your AI provider, enter the endpoint and model, paste your API key (or leave blank for local Ollama). The CV step accepts a PDF drop or plain text paste.
+Open **http://localhost:8080** and complete onboarding. Pick your AI provider, enter the endpoint and model, paste your API key. The CV step accepts a PDF drop or plain text paste.
 
 **Supported AI providers:** Ollama (local/cloud), OpenRouter, DeepInfra, Mistral, or any custom OpenAI-compatible endpoint. Anthropic native API is not supported.
 
@@ -36,7 +36,7 @@ sudo service docker start > /dev/null 2>&1
  Scrape ──▶ Fit-check ──▶ Track 
 ```
 
-1. **Scrape** — click Scrape in the UI. Backend hits jobs.ch for each query in your config (view via Settings), saves listings to SQLite, then fetches full posting text.
+1. **Scrape** — click Scrape in the UI. Backend hits jobs.ch for each query in your config (view via Settings), saves listings to SQLite, then fetches full posting text. LinkedIn is a second, optional source — no account needed, disabled by default (see [MANUAL.md](MANUAL.md#settings)).
 2. **Fit-check** — click Fit-Check. Every job with posting text but no score is sent to your LLM. Results: `fit_label` (Strong / Decent / Experimental / Weak / No Go), a weighted score, and structured reasoning. A progress bar tracks the batch; a fatal error (bad key, no credits, rate limit) stops the batch immediately and flags the button.
 3. **Track** — sort by score, filter by label, read reasoning, set status, write notes, rate jobs.
 

@@ -67,5 +67,8 @@ jobs:
             Download **`Job_App-${{ github.ref_name }}-win64.zip`** below, unzip, run `Job_App.exe`.
             Set your API key in-app on first run. (The "Source code" archives are auto-generated — not the app.)
 
-            ## Docker
-            `docker pull ghcr.io/meisdy/job-app:${{ github.ref_name }}`
+            ## Linux (Docker)
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | bash
+            ```
+            To pin this exact version instead of `latest`, see [MANUAL.md](https://github.com/Meisdy/Job-App/blob/master/MANUAL.md#docker-pinning-a-version).

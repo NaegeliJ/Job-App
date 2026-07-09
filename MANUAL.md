@@ -115,6 +115,28 @@ Open via the gear icon. Two sections, both hot-reload (no restart):
 | Max tokens | Cap on LLM response length |
 | Temperature / top_p / top_k | Sampling parameters |
 
+**LinkedIn (optional, off by default)**
+
+Scrapes LinkedIn's public guest job-search page — no login or API key needed. Because it's unofficial (HTML scraping, not a real API), it can break if LinkedIn changes markup, and is rate-limited harder than jobs.ch (built-in backoff on HTTP 429).
+
+| Field | Notes |
+|-------|-------|
+| Queries | One search string per line |
+| Location | e.g. `Switzerland` |
+| Time range | LinkedIn's `f_TPR` param, e.g. `r604800` = last 7 days |
+| Max results | Per query, clamped 1–50 (default 25) — this is the app's own cap, not a limit LinkedIn publishes |
+
+**Automode**
+
+Runs the full pipeline (scrape all enabled sources → fetch details → batch fit-check) on a timer in the background, using whatever AI provider and Scrape/LinkedIn settings are currently saved — not a frozen snapshot from onboarding. Change Settings any time and the next automode run picks it up (checked every 5s, hot-reload, no restart).
+
+| Field | Notes |
+|-------|-------|
+| Enabled | Off by default |
+| Interval (hours) | Minimum 1. Timer resets after each run, not wall-clock aligned |
+
+If the AI provider isn't reachable or the profile is empty, a run is skipped silently (logged server-side only, no UI error).
+
 ---
 
 ## Admin console
@@ -140,6 +162,17 @@ Open via the gear icon. Two sections, both hot-reload (no restart):
 | `fitcheck:clear-all` | Clear fit data for all jobs |
 | `fitcheck:recheck <id>` | Clear + recheck one job |
 | `fitcheck:recheck-all` | Clear all fit data and queue full batch recheck |
+
+---
+
+## Docker: pinning a version
+
+`setup.sh` and `update.sh` always track `ghcr.io/meisdy/job-app:latest`. To run a specific release instead:
+
+1. Edit `docker-compose.yml`, change `image: ghcr.io/meisdy/job-app:latest` to `image: ghcr.io/meisdy/job-app:vX.Y.Z`.
+2. `docker compose pull && docker compose up -d`
+
+Note: `update.sh` will overwrite this back to `latest` on next run — re-pin after updating if you need to stay pinned.
 
 ---
 
