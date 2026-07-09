@@ -46,8 +46,10 @@ jobs:
           mkdir -p "$DIST/config"
           cp build-win/Job_App.exe "$DIST/"
           cp -r frontend "$DIST/"
-          cp config/config_v2.json    "$DIST/config/"
-          cp config/system_prompt.txt "$DIST/config/"
+          cp config/config_v2.json      "$DIST/config/"
+          cp config/system_prompt.txt   "$DIST/config/"
+          cp config/onboarding_prompt.txt "$DIST/config/"
+          cp config/import_prompt.txt   "$DIST/config/"
           cp config/user_profile_template.md "$DIST/config/" 2>/dev/null || true
           zip -r "Job_App-${{ github.ref_name }}-win64.zip" "$DIST"
 
