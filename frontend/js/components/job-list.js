@@ -1,5 +1,6 @@
 import state from '../state.js';
 import { fmtDate, getStatusIcon, escapeHtml } from '../utils/formatting.js';
+import { isClosedApplication } from '../application-status.js';
 import { renderDetail } from './detail.js';
 
 // ============================================================================
@@ -42,7 +43,8 @@ function matchesSearch(job, query) {
 }
 
 function filterJobs(jobs, currentFilter, searchQuery) {
-  return jobs.filter(job => job.user_status !== 'deleted').filter(job => {
+  // Closed applications (declined/withdrawn/ghosted) live on in the tracker but leave the dashboard
+  return jobs.filter(job => job.user_status !== 'deleted' && !isClosedApplication(job)).filter(job => {
     const passesFilter = matchesFilter(job, currentFilter);
     const passesSearch = matchesSearch(job, searchQuery);
     return passesFilter && passesSearch;

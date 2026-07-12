@@ -1,0 +1,186 @@
+/* ── Tracker header ─────────────────────────────────────────────── */
+
+.tracker-header {
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:10px 18px;
+  border-bottom:1px solid var(--border);
+  background:var(--surface);
+  flex-shrink:0;
+}
+
+.tracker-header .logo {
+  font-size:15px;
+  font-weight:700;
+  letter-spacing:-0.01em;
+}
+
+.back-btn {
+  color:var(--text3);
+  text-decoration:none;
+  font-size:12px;
+  padding:5px 12px;
+  border:1px solid var(--border2);
+  border-radius:6px;
+  transition:all 0.15s;
+}
+.back-btn:hover { color:var(--text); border-color:var(--accent); }
+
+.tracker-count {
+  font-family:'JetBrains Mono', monospace;
+  font-size:11px;
+  color:var(--text3);
+}
+
+#sort-select { margin-left:auto; }
+
+.status-filter {
+  background:var(--surface2);
+  color:var(--text2);
+  border:1px solid var(--border2);
+  border-radius:6px;
+  font-family:'JetBrains Mono', monospace;
+  font-size:11px;
+  padding:5px 8px;
+  cursor:pointer;
+}
+.status-filter:focus { outline:none; border-color:rgba(96,165,250,0.4); }
+
+/* ── Table ──────────────────────────────────────────────────────── */
+
+.tracker-main {
+  flex:1;
+  overflow:auto;
+  padding:16px 18px;
+}
+
+.tracker-table {
+  width:100%;
+  table-layout:fixed; /* th widths rule the columns, needed for drag-resize */
+  border-collapse:collapse;
+  font-size:12px;
+}
+
+/* default column widths; last column (Notes) absorbs the leftover space */
+.tracker-table th:nth-child(1) { width:120px; }  /* Status */
+.tracker-table th:nth-child(2) { width:240px; }  /* Position */
+.tracker-table th:nth-child(3) { width:150px; }  /* Company */
+.tracker-table th:nth-child(4) { width:130px; }  /* Location */
+.tracker-table th:nth-child(5) { width:110px; }  /* Applied */
+.tracker-table th:nth-child(6) { width:170px; }  /* Last reaction */
+.tracker-table th:nth-child(7) { width:110px; }  /* Reaction date */
+
+.tracker-table th {
+  text-align:left;
+  font-family:'JetBrains Mono', monospace;
+  font-size:9px;
+  font-weight:500;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:var(--text3);
+  padding:8px 10px;
+  border-bottom:1px solid var(--border2);
+  position:sticky;
+  top:-16px;
+  background:var(--bg);
+  z-index:1;
+}
+
+.tracker-table td {
+  padding:6px 10px;
+  border-bottom:1px solid var(--border);
+  vertical-align:middle;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* ── Column resize handles ──────────────────────────────────────── */
+
+.col-resize-handle {
+  position:absolute; /* th is position:sticky, so it anchors here */
+  top:0;
+  right:0;
+  bottom:0;
+  width:5px;
+  cursor:col-resize;
+  transition:background 0.15s;
+}
+.col-resize-handle:hover,
+.col-resize-handle.dragging {
+  background:var(--accent-dim);
+  box-shadow:inset -1px 0 0 var(--accent);
+}
+body.col-resizing {
+  cursor:col-resize;
+  user-select:none;
+}
+
+.tracker-row:hover td { background:var(--surface); }
+.row-closed { opacity:0.5; }
+
+.tracker-empty {
+  text-align:center;
+  color:var(--text3);
+  padding:40px 0 !important;
+}
+
+/* ── Cells ──────────────────────────────────────────────────────── */
+
+.cell-title a {
+  color:var(--text);
+  font-weight:600;
+  text-decoration:none;
+}
+.cell-title a:hover { color:var(--accent); }
+
+.cell-company { color:var(--text2); }
+.cell-location { color:var(--text3); }
+
+.cell-status,
+.cell-date,
+.cell-text {
+  background:transparent;
+  color:var(--text2);
+  border:1px solid transparent;
+  border-radius:5px;
+  font-family:'Inter', sans-serif;
+  font-size:12px;
+  padding:4px 6px;
+  width:100%;
+  transition:border-color 0.15s, background 0.15s;
+}
+
+.cell-status { cursor:pointer; width:auto; font-family:'JetBrains Mono', monospace; font-size:11px; }
+.cell-date { width:120px; color-scheme:dark; }
+
+/* Empty date: hide the YYYY-MM-DD skeleton until focused, keep dimmed calendar icon */
+.cell-date[value=""]:not(:focus) { color:transparent; }
+.cell-date[value=""]:not(:focus)::-webkit-datetime-edit { color:transparent; }
+.cell-date[value=""]:not(:focus)::-webkit-calendar-picker-indicator { opacity:0.25; }
+
+.cell-status:hover,
+.cell-date:hover,
+.cell-text:hover { border-color:var(--border2); }
+
+.cell-status:focus,
+.cell-date:focus,
+.cell-text:focus {
+  outline:none;
+  border-color:rgba(96,165,250,0.4);
+  background:var(--surface2);
+  color:var(--text);
+}
+
+.cell-status option { background:var(--surface2); color:var(--text); }
+
+/* status colors */
+.status-waiting          { color:var(--orange); }
+.status-first_interview  { color:var(--accent); }
+.status-next_round       { color:var(--turquoise); }
+.status-assessment       { color:var(--purple); }
+.status-offer            { color:var(--lime); }
+.status-declined         { color:var(--red); }
+.status-withdrawn        { color:var(--text3); }
+.status-ghosted          { color:var(--dark-red); }
+.status-none             { color:var(--text3); }

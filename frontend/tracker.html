@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Application Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/css/variables.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components/utilities.css">
+  <link rel="stylesheet" href="/css/components/tracker.css">
+</head>
+<body>
+
+<header class="tracker-header">
+  <a href="/" class="back-btn">← Dashboard</a>
+  <div class="logo">Application Tracker</div>
+  <span class="tracker-count" id="tracker-count">—</span>
+  <select id="sort-select" class="status-filter" aria-label="Sort applications">
+    <option value="status">Sort: Status</option>
+    <option value="applied_newest">Sort: Applied (newest)</option>
+    <option value="applied_oldest">Sort: Applied (oldest)</option>
+    <option value="reaction_newest">Sort: Reaction (newest)</option>
+    <option value="company">Sort: Company A–Z</option>
+  </select>
+  <select id="status-filter" class="status-filter" aria-label="Filter by status">
+    <option value="all">All statuses</option>
+    <option value="active">Active</option>
+    <option value="waiting">Waiting</option>
+    <option value="first_interview">1st Interview</option>
+    <option value="next_round">Next Round</option>
+    <option value="assessment">Assessment</option>
+    <option value="offer">Offer</option>
+    <option value="declined">Declined</option>
+    <option value="withdrawn">Withdrawn</option>
+    <option value="ghosted">Ghosted</option>
+  </select>
+</header>
+
+<div class="tracker-main">
+  <table class="tracker-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Position</th>
+        <th>Company</th>
+        <th>Location</th>
+        <th>Applied</th>
+        <th>Last reaction</th>
+        <th>Reaction date</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody id="tracker-body">
+      <tr><td colspan="8"><div class="ldw"><span class="ld">●</span><span class="ld">●</span><span class="ld">●</span></div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="/js/tracker.js"></script>
+
+</body>
+</html>

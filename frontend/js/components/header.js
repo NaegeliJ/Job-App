@@ -1,5 +1,6 @@
 import state from '../state.js';
 import { renderList } from './job-list.js';
+import { isClosedApplication } from '../application-status.js';
 import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
@@ -73,7 +74,8 @@ function countWeakJobs(jobs) {
 }
 
 export function updateStats() {
-  const jobs = state.allJobs.filter(j => j.user_status !== 'deleted');
+  // Same visibility rule as the job list: closed applications only count in the tracker
+  const jobs = state.allJobs.filter(j => j.user_status !== 'deleted' && !isClosedApplication(j));
   const total = jobs.length;
   
   // Fit verdict counts
@@ -103,6 +105,11 @@ export function updateStats() {
     const btn = document.getElementById(id);
     if (btn) btn.textContent = text;
   });
+
+  // Tracker keeps closed applications, so its count includes them (unlike counts.applied)
+  const allApplications = state.allJobs.filter(j => j.user_status === 'applied').length;
+  const trackerBtn = document.getElementById('tracker-btn');
+  if (trackerBtn) trackerBtn.textContent = `📋 Applied (${allApplications})`;
 }
 
 // ============================================================================
