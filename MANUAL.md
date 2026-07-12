@@ -1,4 +1,4 @@
-# Job Radar — Manual
+# Job Master — Manual
 
 ## Onboarding
 
@@ -53,6 +53,10 @@ Stale jobs are hard-deleted automatically on every scrape run. No UI action need
 | jobs.ch | Deleted when `publication_end_date` has passed |
 | LinkedIn | Deleted 60 days after first scraped |
 
+**Exception:** jobs marked **Applied** are never auto-deleted, regardless of source or age. They stay in the database for the [Application tracker](#application-tracker) until you remove them yourself.
+
+Manually imported jobs (Add Job manually) have no LinkedIn age limit; they are only auto-deleted if the AI extracted an end date from the pasted text and that date has passed — and even then not while marked Applied.
+
 Hard-delete = row removed from DB entirely, not recoverable via `restore:all`.
 
 ---
@@ -86,6 +90,31 @@ Clicking a status button a second time toggles it off.
 
 ---
 
+## Application tracker
+
+Open via the **📋 Applied (N)** button in the header — the count includes every application, open or closed. The tracker is a follow-up dashboard listing every job marked **Applied**, on its own page.
+
+Getting jobs in: mark any job as ✓ Applied in the detail panel — scraped or manually imported, both land here. Jobs on the tracker are never auto-deleted (see [Auto-deletion](#auto-deletion)).
+
+Most columns edit inline — click a cell, change it, done. **Position** and **Company** are read-only; the position links back to the job on the dashboard.
+
+| Column | Editable | Notes |
+|--------|----------|-------|
+| Status | ✔ | Dropdown: Waiting · First interview · Next round · Assessment · Offer · Declined · Withdrawn · Ghosted |
+| Position | — | Links to the job's detail panel on the dashboard |
+| Company | — | |
+| Location | ✔ | Free text, max 200 characters — e.g. to correct an extracted location |
+| Applied | ✔ | Date you applied |
+| Last reaction | ✔ | Free text, max 500 characters — what the company said |
+| Reaction date | ✔ | Date of the company's last response |
+| Notes | ✔ | Free text, multiline — the cell grows into a textarea while editing |
+
+Declined, Withdrawn, and Ghosted count as **closed** — greyed out, sorted last, and hidden from the main job list and its counters (they live only here).
+
+**Filter** by status or **Active** (everything not closed). Default **sort** is by progress: Offer first, then Assessment, Next round, First interview, Waiting, closed statuses last; newest reaction breaks ties. Columns are resizable by dragging their edges.
+
+---
+
 ## Profile
 
 Open via the person icon in the header. Plain Markdown — write exactly what you want the LLM to know about you. Save with the **Save** button. No restart needed.
@@ -95,6 +124,8 @@ Open via the person icon in the header. Plain Markdown — write exactly what yo
 ## Settings
 
 Open via the gear icon. Two sections, both hot-reload (no restart):
+
+Saving AI provider settings first runs a live connection test against the endpoint (60 s timeout). If the test fails — wrong key, unreachable endpoint, bad model — the save is blocked and the error is shown, so a broken config never reaches the fit-check. The same test runs during onboarding.
 
 **AI provider**
 
