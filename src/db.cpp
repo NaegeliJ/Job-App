@@ -135,10 +135,12 @@ void delete_expired_jobs(sqlite3* db) {
     exec_write(db, R"(
         DELETE FROM jobs
         WHERE publication_end_date != '' AND publication_end_date < date('now')
+          AND (user_status IS NULL OR user_status != 'applied')
     )", {});
     exec_write(db, R"(
         DELETE FROM jobs
         WHERE source = 'linkedin' AND scraped_at < date('now', '-60 days')
+          AND (user_status IS NULL OR user_status != 'applied')
     )", {});
 }
 
