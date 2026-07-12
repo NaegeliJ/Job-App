@@ -24,6 +24,7 @@
 using json = nlohmann::json;
 
 static const int LAST_REACTION_CHAR_LIMIT = 500;
+static const int PLACE_CHAR_LIMIT = 200;
 static const std::vector<std::string> cApplicationStatuses = {
     "waiting", "first_interview", "next_round", "assessment", "offer", "declined", "withdrawn", "ghosted"
 };
@@ -142,6 +143,13 @@ void registerRoutes(httplib::Server& server, AppState& state, Scheduler& schedul
             if (body.contains("last_reaction_at")){
                 std::string last_reaction_at = body["last_reaction_at"];
                 update_job_field(state.db, job_id, "last_reaction_at", last_reaction_at);
+            }
+            if (body.contains("place")){
+                std::string place = body["place"];
+                if (place.length() > PLACE_CHAR_LIMIT) {
+                    throw std::runtime_error("place string must not exceed " + std::to_string(PLACE_CHAR_LIMIT) + " chars");
+                }
+                update_job_field(state.db, job_id, "place", place);
             }
             if (body.contains("last_reaction")){
                 std::string last_reaction = body["last_reaction"];

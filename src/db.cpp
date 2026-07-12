@@ -72,7 +72,7 @@ void update_job_field(sqlite3 *db, const std::string &job_id, const std::string&
     // Whitelist of allowed fields to prevent SQL injection
     static const std::vector<std::string> allowedFields = {
         "user_status", "rating", "notes", "availability_status", "application_url",
-        "application_status", "applied_at", "last_reaction_at", "last_reaction"
+        "application_status", "applied_at", "last_reaction_at", "last_reaction", "place"
     };
 
     if (std::find(allowedFields.begin(), allowedFields.end(), field) == allowedFields.end()) {

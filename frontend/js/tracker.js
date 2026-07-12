@@ -98,7 +98,7 @@ function buildRowHtml(job) {
         <a href="/?job=${encodeURIComponent(job.job_id)}" title="Open in dashboard">${escapeHtml(job.title || 'Unknown')}</a>
       </td>
       <td class="cell-company">${escapeHtml(job.company_name || '—')}</td>
-      <td class="cell-location">${escapeHtml(job.place || '—')}</td>
+      <td><input type="text" class="cell-text cell-location" data-field="place" maxlength="200" placeholder="—" value="${escapeHtml(job.place || '')}"></td>
       <td><input type="date" class="cell-date" data-field="applied_at" value="${escapeHtml(job.applied_at || '')}"></td>
       <td><input type="text" class="cell-text" data-field="last_reaction" maxlength="500" placeholder="—" value="${escapeHtml(job.last_reaction || '')}"></td>
       <td><input type="date" class="cell-date" data-field="last_reaction_at" value="${escapeHtml(job.last_reaction_at || '')}"></td>

@@ -135,7 +135,7 @@ body.col-resizing {
 .cell-title a:hover { color:var(--accent); }
 
 .cell-company { color:var(--text2); }
-.cell-location { color:var(--text3); }
+.cell-text.cell-location { color:var(--text3); }
 
 .cell-status,
 .cell-date,
