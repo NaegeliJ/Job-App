@@ -102,7 +102,7 @@ function buildRowHtml(job) {
       <td><input type="date" class="cell-date" data-field="applied_at" value="${escapeHtml(job.applied_at || '')}"></td>
       <td><input type="text" class="cell-text" data-field="last_reaction" maxlength="500" placeholder="—" value="${escapeHtml(job.last_reaction || '')}"></td>
       <td><input type="date" class="cell-date" data-field="last_reaction_at" value="${escapeHtml(job.last_reaction_at || '')}"></td>
-      <td><input type="text" class="cell-text" data-field="notes" placeholder="—" value="${escapeHtml(job.notes || '')}"></td>
+      <td><textarea class="cell-text cell-notes" data-field="notes" rows="1" placeholder="—">${escapeHtml(job.notes || '')}</textarea></td>
     </tr>`;
 }
 
@@ -119,6 +119,23 @@ function render() {
   }
 
   body.innerHTML = visible.map(buildRowHtml).join('');
+}
+
+function growNotes(el) {
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 2) + 'px'; // +2: box-sizing border-box, scrollHeight excludes the 1px borders
+}
+
+function onNotesFocusIn(e) {
+  if (e.target.matches('.cell-notes')) growNotes(e.target);
+}
+
+function onNotesInput(e) {
+  if (e.target.matches('.cell-notes')) growNotes(e.target);
+}
+
+function onNotesFocusOut(e) {
+  if (e.target.matches('.cell-notes')) e.target.style.height = '';
 }
 
 function onFieldChange(e) {
@@ -162,7 +179,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initColumnResize(document.querySelector('.tracker-table'));
 
-  document.getElementById('tracker-body').addEventListener('change', onFieldChange);
+  const body = document.getElementById('tracker-body');
+  body.addEventListener('change', onFieldChange);
+  body.addEventListener('focusin', onNotesFocusIn);
+  body.addEventListener('input', onNotesInput);
+  body.addEventListener('focusout', onNotesFocusOut);
 
   const filter = document.getElementById('status-filter');
   if (filter) {
