@@ -88,16 +88,31 @@ export async function setStatus(newStatus) {
   
   const toggledStatus = state.currentJob.user_status === newStatus ? 'unseen' : newStatus;
   state.currentJob.user_status = toggledStatus;
-  
+
+  const payload = {
+    job_id: state.currentJob.job_id,
+    user_status: toggledStatus
+  };
+
+  // Entering the tracker: seed pipeline fields, but never clobber existing data on re-toggle
+  if (toggledStatus === 'applied') {
+    if (!state.currentJob.application_status) {
+      state.currentJob.application_status = 'waiting';
+      payload.application_status = 'waiting';
+    }
+    if (!state.currentJob.applied_at) {
+      const today = new Date().toISOString().slice(0, 10);
+      state.currentJob.applied_at = today;
+      payload.applied_at = today;
+    }
+  }
+
   updateJobInState(state.currentJob);
   renderDetail();
   renderList();
   updateStats();
-  
-  await persistJob({
-    job_id: state.currentJob.job_id,
-    user_status: toggledStatus
-  });
+
+  await persistJob(payload);
   
   const message = toggledStatus === 'unseen' ? 'Unmarked' : `Marked as ${toggledStatus}`;
   showToast(message);

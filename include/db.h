@@ -40,6 +40,12 @@ struct JobRecord : Job {
     std::string fit_reasoning;
     std::string fit_checked_at;
     std::string fit_profile_hash;
+
+    // extra tracker fields
+    std::string application_status;
+    std::string applied_at;
+    std::string last_reaction;
+    std::string last_reaction_at;
 };
 
 // Database initialization

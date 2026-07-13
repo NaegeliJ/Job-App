@@ -71,7 +71,8 @@ void delete_job(sqlite3* db, const std::string &job_id) {
 void update_job_field(sqlite3 *db, const std::string &job_id, const std::string& field, const std::string &value) {
     // Whitelist of allowed fields to prevent SQL injection
     static const std::vector<std::string> allowedFields = {
-        "user_status", "rating", "notes", "availability_status", "application_url"
+        "user_status", "rating", "notes", "availability_status", "application_url",
+        "application_status", "applied_at", "last_reaction_at", "last_reaction", "place"
     };
 
     if (std::find(allowedFields.begin(), allowedFields.end(), field) == allowedFields.end()) {
@@ -134,10 +135,12 @@ void delete_expired_jobs(sqlite3* db) {
     exec_write(db, R"(
         DELETE FROM jobs
         WHERE publication_end_date != '' AND publication_end_date < date('now')
+          AND (user_status IS NULL OR user_status != 'applied')
     )", {});
     exec_write(db, R"(
         DELETE FROM jobs
         WHERE source = 'linkedin' AND scraped_at < date('now', '-60 days')
+          AND (user_status IS NULL OR user_status != 'applied')
     )", {});
 }
 
@@ -163,7 +166,11 @@ void db_init(sqlite3 *db) {
             user_status              TEXT,
             rating                   INTEGER,
             notes                    TEXT,
-            availability_status      TEXT
+            availability_status      TEXT,
+            application_status       TEXT,
+            applied_at               TEXT,
+            last_reaction            TEXT,
+            last_reaction_at         TEXT
         );
     )", nullptr, nullptr, &errMsg);
     if (rc != SQLITE_OK) {
@@ -235,7 +242,7 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
                user_status, rating, notes, availability_status, detail_url,
                initial_publication_date, publication_end_date, fit_score, fit_label,
                fit_summary, fit_reasoning, fit_checked_at, fit_profile_hash,
-               template_text, source
+               template_text, source, application_status, applied_at, last_reaction, last_reaction_at
         FROM jobs
     )";
     exec_query(db, sql, [&](sqlite3_stmt* stmt) {
@@ -263,6 +270,10 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
         job.fit_profile_hash    = getColumn(stmt, 20);
         job.template_text       = getColumn(stmt, 21);
         job.source              = getColumn(stmt, 22);
+        job.application_status  = getColumn(stmt, 23);
+        job.applied_at          = getColumn(stmt, 24);
+        job.last_reaction       = getColumn(stmt, 25);
+        job.last_reaction_at    = getColumn(stmt, 26);
         jobs.push_back(job);
     });
     return jobs;
@@ -273,13 +284,19 @@ void db_v2_init(sqlite3* db) {
 }
 
 void db_v2_ensure_tables(sqlite3* db) {
-    if (!column_exists(db, "jobs", "fit_score"))      exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_score INTEGER;");
-    if (!column_exists(db, "jobs", "fit_label"))      exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_label TEXT;");
-    if (!column_exists(db, "jobs", "fit_summary"))   exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_summary TEXT;");
-    if (!column_exists(db, "jobs", "fit_reasoning")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_reasoning TEXT;");
-    if (!column_exists(db, "jobs", "fit_checked_at")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_checked_at TEXT;");
-    if (!column_exists(db, "jobs", "fit_profile_hash")) exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_profile_hash TEXT;");
-    if (!column_exists(db, "jobs", "source"))           exec_write(db, "ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'jobs_ch';");
+    if (!column_exists(db, "jobs", "fit_score"))            exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_score           INTEGER;");
+    if (!column_exists(db, "jobs", "fit_label"))            exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_label           TEXT;");
+    if (!column_exists(db, "jobs", "fit_summary"))          exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_summary         TEXT;");
+    if (!column_exists(db, "jobs", "fit_reasoning"))        exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_reasoning       TEXT;");
+    if (!column_exists(db, "jobs", "fit_checked_at"))       exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_checked_at      TEXT;");
+    if (!column_exists(db, "jobs", "fit_profile_hash"))     exec_write(db, "ALTER TABLE jobs ADD COLUMN fit_profile_hash    TEXT;");
+    if (!column_exists(db, "jobs", "source"))               exec_write(db, "ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'jobs_ch';");
+    if (!column_exists(db, "jobs", "application_status"))   exec_write(db, "ALTER TABLE jobs ADD COLUMN application_status  TEXT;");
+    if (!column_exists(db, "jobs", "applied_at"))           exec_write(db, "ALTER TABLE jobs ADD COLUMN applied_at          TEXT;");
+    if (!column_exists(db, "jobs", "last_reaction"))        exec_write(db, "ALTER TABLE jobs ADD COLUMN last_reaction       TEXT;");
+    if (!column_exists(db, "jobs", "last_reaction_at"))     exec_write(db, "ALTER TABLE jobs ADD COLUMN last_reaction_at    TEXT;");
+
+
 }
 
 std::optional<std::string> get_job_template_text(sqlite3* db, const std::string& job_id) {

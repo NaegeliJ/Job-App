@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(Job_App)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT DEFINED APP_VERSION OR APP_VERSION STREQUAL "")
@@ -39,7 +39,9 @@ if(WIN32)
         ws2_32 wldap32 crypt32 secur32 bcrypt iphlpapi
         /usr/x86_64-w64-mingw32/lib/libwinpthread.a
     )
-    target_link_options(Job_App PRIVATE -static)
+    # --allow-multiple-definition: mingw GCC 13 snapshot bug — C++23 constexpr
+    # type_info::operator== collides with static libstdc++ copy. Drop when CI mingw is fixed.
+    target_link_options(Job_App PRIVATE -static -Wl,--allow-multiple-definition)
 else()
     target_link_libraries(Job_App curl)
 endif()

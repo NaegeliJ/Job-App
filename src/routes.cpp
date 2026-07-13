@@ -1,12 +1,16 @@
 #include "routes.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
+#include "httplib.h"
 #include "json.hpp"
 #include "app_state.h"
 #include "ai.h"
@@ -18,6 +22,12 @@
 #include "scraper.h"
 
 using json = nlohmann::json;
+
+static const int LAST_REACTION_CHAR_LIMIT = 500;
+static const int PLACE_CHAR_LIMIT = 200;
+static const std::vector<std::string> cApplicationStatuses = {
+    "waiting", "first_interview", "next_round", "assessment", "offer", "declined", "withdrawn", "ghosted"
+};
 
 static json jobRecordToJson(const JobRecord& job) {
     json jobJson;
@@ -45,6 +55,11 @@ static json jobRecordToJson(const JobRecord& job) {
     jobJson["fit_checked_at"]      = job.fit_checked_at;
     jobJson["fit_profile_hash"]    = job.fit_profile_hash;
     jobJson["source"]              = job.source.empty() ? "jobs_ch" : job.source;
+
+    jobJson["application_status"]  = job.application_status;
+    jobJson["applied_at"]          = job.applied_at;
+    jobJson["last_reaction"]       = job.last_reaction;
+    jobJson["last_reaction_at"]    = job.last_reaction_at;
 
     return jobJson;
 }
@@ -123,6 +138,35 @@ void registerRoutes(httplib::Server& server, AppState& state, Scheduler& schedul
                 if (score < 0 || score > 100)
                     throw std::runtime_error("fit_score must be 0-100");
                 update_job_field(state.db, job_id, "fit_score", std::to_string(score));
+            }
+            if (body.contains("application_status")){
+                std::string status = body["application_status"];
+                if (!std::ranges::contains(cApplicationStatuses, status) && !status.empty()) {
+                    throw std::runtime_error("Application status string not accepted");
+                }
+                update_job_field(state.db, job_id, "application_status", status);
+            }
+            if (body.contains("applied_at")){
+                std::string applied_at = body["applied_at"];
+                update_job_field(state.db, job_id, "applied_at", applied_at); // single source of truth is frontend, no checks needed here
+            }
+            if (body.contains("last_reaction_at")){
+                std::string last_reaction_at = body["last_reaction_at"];
+                update_job_field(state.db, job_id, "last_reaction_at", last_reaction_at);
+            }
+            if (body.contains("place")){
+                std::string place = body["place"];
+                if (place.length() > PLACE_CHAR_LIMIT) {
+                    throw std::runtime_error("place string must not exceed " + std::to_string(PLACE_CHAR_LIMIT) + " chars");
+                }
+                update_job_field(state.db, job_id, "place", place);
+            }
+            if (body.contains("last_reaction")){
+                std::string last_reaction = body["last_reaction"];
+                if (last_reaction.length() > LAST_REACTION_CHAR_LIMIT) {
+                    throw std::runtime_error("last reaction string must not exceed " + std::to_string(LAST_REACTION_CHAR_LIMIT) + " chars");
+                }
+                update_job_field(state.db, job_id, "last_reaction", last_reaction);
             }
 
             sendJson(res, {{"ok", true}});

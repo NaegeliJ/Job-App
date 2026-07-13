@@ -23,6 +23,10 @@ async function init() {
     updateStats();
     renderList();
     bindEvents();
+
+    // Deep link from tracker: /?job=<id> opens the job detail
+    const linkedJobId = new URLSearchParams(window.location.search).get('job');
+    if (linkedJobId) selectJob(linkedJobId);
   } catch (e) {
     console.error('Init error:', e);
     setConnectionStatus('error');
@@ -72,6 +76,7 @@ function bindEvents() {
   onClick('onboard-btn', openOnboarding);
   onClick('fitcheck-btn', triggerFitCheck);
   onClick('map-btn', openJobMap);
+  onClick('tracker-btn', () => { window.location.href = '/tracker.html'; });
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
 
