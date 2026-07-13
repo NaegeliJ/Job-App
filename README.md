@@ -1,4 +1,4 @@
-# Jobs Master
+# Job Master
 
 Scrape job listings from jobs.ch, linkedIn or import a job manually, score them against your profile with an LLM, and track applications — all in one self-hosted UI.
 
@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/setup.sh | ba
 
 ### First run
 
-Open **http://localhost:8080** and complete onboarding. Pick your AI provider, enter the endpoint and model, paste your API key. The CV step accepts a PDF drop or plain text paste.
+Open **http://localhost:8080** and complete onboarding. Pick your AI provider, enter the endpoint and model, paste your API key. The app tests the connection before letting you continue — a bad key or endpoint is caught immediately, not at your first fit-check. The CV step accepts a PDF drop or plain text paste.
 
 **Supported AI providers:** Ollama (local/cloud), OpenRouter, DeepInfra, Mistral, or any custom OpenAI-compatible endpoint. Anthropic native API is not supported.
 
@@ -38,7 +38,7 @@ sudo service docker start > /dev/null 2>&1
 
 1. **Scrape** — click Scrape in the UI. Backend hits jobs.ch for each query in your config (view via Settings), saves listings to SQLite, then fetches full posting text. LinkedIn is a second, optional source — no account needed, disabled by default (see [MANUAL.md](MANUAL.md#settings)).
 2. **Fit-check** — click Fit-Check. Every job with posting text but no score is sent to your LLM. Results: `fit_label` (Strong / Decent / Experimental / Weak / No Go), a weighted score, and structured reasoning. A progress bar tracks the batch; a fatal error (bad key, no credits, rate limit) stops the batch immediately and flags the button.
-3. **Track** — sort by score, filter by label, read reasoning, set status, write notes, rate jobs.
+3. **Track** — sort by score, filter by label, read reasoning, set status, write notes, rate jobs. Jobs you mark as **Applied** appear on the **Application Tracker** (📋 Applied button) — a follow-up dashboard with per-application status, dates, reactions, and notes. Applied jobs are never auto-deleted, even after the posting expires. The **🗺 Map** button shows all jobs on a Switzerland map, colored by fit label, with an optional home-position radius filter — geocoded fully client-side, no external service (see [MANUAL.md](MANUAL.md#map-view)).
 
 **First-time setup tip:** Start with a small scrape (1–2 queries, low `rows`). Fit-check those jobs, read the reasoning, and adjust your profile or LLM settings until the scores feel right. Once satisfied, scrape the full set and run a full batch fit-check.
 

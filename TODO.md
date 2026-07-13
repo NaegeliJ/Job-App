@@ -15,8 +15,8 @@
 
 
 ## Ideas
-- Map view with jobs
+- ~~Map view with jobs~~ (done: 🗺 Map page, client-side geocoding)
 - Data sources and more scraping
-- Range radius / better location filtering
+- ~~Range radius / better location filtering~~ (done: home + radius slider on map)
 - Adding a general AI ask me questions logic to ask questions like, does A fit better than B, or maybe even adjust rating due to reason X.
 - Reminder system and generally full pipeline from searching to apply overview, reminders and more

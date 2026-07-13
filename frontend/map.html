@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Master - Map</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.css">
+  <link rel="stylesheet" href="/vendor/markercluster/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="/css/variables.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components/utilities.css">
+  <link rel="stylesheet" href="/css/components/map.css">
+</head>
+<body>
+
+<header class="map-header">
+  <a href="/" class="back-btn">← Dashboard</a>
+  <div class="logo">Job Map</div>
+  <span class="map-count" id="map-count">—</span>
+
+  <div class="map-filters" id="map-filters">
+    <button class="chip active" data-filter="all">All</button>
+    <button class="chip" data-filter="strong">Strong</button>
+    <button class="chip" data-filter="decent">Decent</button>
+    <button class="chip" data-filter="experimental">Exp</button>
+    <button class="chip" data-filter="weak">Weak</button>
+    <button class="chip" data-filter="unseen">New</button>
+    <button class="chip" data-filter="interested">Starred</button>
+    <button class="chip" data-filter="applied">Applied</button>
+  </div>
+
+  <div class="map-home-controls">
+    <button class="tool-btn" id="set-home-btn" title="Then click the map to place home">⌂ Set home</button>
+    <button class="tool-btn" id="geolocate-btn" title="Use browser location (works on localhost)">📍</button>
+    <label class="radius-label" id="radius-label" hidden>
+      <input type="range" id="radius-slider" min="5" max="100" step="5" value="30">
+      <span id="radius-value">30 km</span>
+    </label>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<div class="unlocated-drawer" id="unlocated-drawer" hidden>
+  <button class="unlocated-toggle" id="unlocated-toggle">▲ <span id="unlocated-count">0</span> jobs without map position</button>
+  <div class="unlocated-list" id="unlocated-list" hidden></div>
+</div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/vendor/markercluster/leaflet.markercluster.js"></script>
+<script type="module" src="/js/map.js"></script>
+
+</body>
+</html>
