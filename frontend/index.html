@@ -5,14 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Job Master</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  
+
   <!-- CSS Variables & Base -->
   <link rel="stylesheet" href="/css/variables.css">
   <link rel="stylesheet" href="/css/base.css">
-  
+
   <!-- Layout -->
   <link rel="stylesheet" href="/css/layouts/main.css">
-  
+
   <!-- Component Styles -->
   <link rel="stylesheet" href="/css/components/header.css">
   <link rel="stylesheet" href="/css/components/sidebar.css">
@@ -21,7 +21,7 @@
   <link rel="stylesheet" href="/css/components/modal.css">
   <link rel="stylesheet" href="/css/components/utilities.css">
   <link rel="stylesheet" href="/css/components/console.css">
-  
+
   <!-- Feature Styles -->
   <link rel="stylesheet" href="/css/features/fit-assessment.css">
   <link rel="stylesheet" href="/css/features/fit-verdict.css">
@@ -36,6 +36,7 @@
     <div class="status-dot" id="status-dot"></div>
     <span id="status-label">—</span>
   </div>
+  <button class="mobile-tools-toggle" id="mobile-tools-toggle" aria-expanded="false" aria-controls="header-actions">☰</button>
 <div class="search-group">
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
@@ -43,18 +44,19 @@
       <span class="search-hint">Ctrl + K</span>
       <button class="search-clear" id="search-clear" aria-label="Clear search">✕</button>
     </div>
-    <button class="tool-btn scrape-btn" id="scrape-btn">⊕ Scrape Jobs</button>
-    <button class="tool-btn" id="import-job-btn">⊕ Add Job manually</button>
+  </div>
+  <div class="header-actions" id="header-actions">
+    <button class="tool-btn scrape-btn" id="scrape-btn">⊕ Scrape</button>
+    <button class="tool-btn" id="import-job-btn">⊕ Add Job</button>
     <button class="tool-btn fitcheck-btn" id="fitcheck-btn">🤖 Fit-Check</button>
-    <div class="bulk-delete-wrap" style="position:relative">
-      <button class="tool-btn" id="bulk-delete-btn">🗑 Clean up ▾</button>
-      <div class="bulk-delete-menu" id="bulk-delete-menu"></div>
+    <button class="tool-btn" id="map-btn">🗺 Map</button>
+    <button class="tool-btn" id="tracker-btn">📋 Applied</button>
+    <button class="tool-btn profile-btn" id="profile-btn">👤 Profile</button>
+    <button class="tool-btn settings-btn" id="settings-btn">⚙ Settings</button>
+    <div class="bulk-delete-wrap">
+      <button class="tool-btn cleanup-btn" id="bulk-delete-btn">🗑 Clean up</button>
     </div>
   </div>
-  <button class="tool-btn" id="map-btn" style="margin-left:auto">🗺 Map</button>
-  <button class="tool-btn" id="tracker-btn">📋 Applied</button>
-  <button class="tool-btn profile-btn" id="profile-btn">👤 Profile</button>
-  <button class="tool-btn settings-btn" id="settings-btn">⚙ Settings</button>
   <span id="update-notice" class="update-notice" style="display:none"></span>
 </header>
 
@@ -86,6 +88,7 @@
   </div>
 
   <div class="detail-panel">
+    <button class="mobile-back-btn" id="mobile-back-btn">← Back to Jobs</button>
     <div class="detail-scroll" id="detail-scroll">
       <div class="empty"><div class="empty-i">⌖</div><div class="empty-t">Select a position</div></div>
     </div>

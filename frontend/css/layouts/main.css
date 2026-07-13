@@ -1,2 +1,28 @@
 /* ── LAYOUT ── */
-.main { display:flex; flex:1; overflow:hidden; }
+.main { display:flex; flex:1; min-height:0; overflow:hidden; }
+
+
+@media (max-width: 1024px) {
+  .main { flex-direction: column; position: relative; min-height: 0; }
+  .main .sidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 100%;
+    flex: 1;
+    border-right: none;
+    overflow-y: auto;
+  }
+  .main .detail-panel { display: none; }
+  .main.detail-open .sidebar { display: none; }
+  .main.detail-open .detail-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+  }
+  .main.detail-open .detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

@@ -79,6 +79,29 @@ function bindEvents() {
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
 
+  const mobileToolsToggle = document.getElementById('mobile-tools-toggle');
+  const headerActions = document.getElementById('header-actions');
+  if (mobileToolsToggle && headerActions) {
+    mobileToolsToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = headerActions.classList.toggle('open');
+      mobileToolsToggle.setAttribute('aria-expanded', String(isOpen));
+    });
+    headerActions.addEventListener('click', e => {
+      if (window.innerWidth > 1024) return;
+      if (e.target.closest('button, a')) {
+        headerActions.classList.remove('open');
+        mobileToolsToggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('click', e => {
+      if (window.innerWidth > 1024) return;
+      if (headerActions.contains(e.target) || mobileToolsToggle.contains(e.target)) return;
+      headerActions.classList.remove('open');
+      mobileToolsToggle.setAttribute('aria-expanded', 'false');
+    });
+  }
+
   initBulkDeleteDropdown();
 
   const jobList = document.getElementById('job-list');
@@ -87,9 +110,18 @@ function bindEvents() {
       const item = e.target.closest('.job-item');
       if (!item) return;
       const id = item.dataset.id;
-      if (id) selectJob(id);
+      if (id) {
+        selectJob(id);
+        if (window.innerWidth <= 1024) {
+          document.querySelector('.main')?.classList.add('detail-open');
+        }
+      }
     });
   }
+
+  onClick('mobile-back-btn', () => {
+    document.querySelector('.main')?.classList.remove('detail-open');
+  });
 
   onClick('btn-i', () => setStatus('interested'));
   onClick('btn-a', () => setStatus('applied'));
@@ -162,6 +194,11 @@ document.addEventListener('keydown', e => {
     closeSettings();
     closeProfile();
     closeImportModal();
+    document.querySelector('.main')?.classList.remove('detail-open');
+    const headerActions = document.getElementById('header-actions');
+    const mobileToolsToggle = document.getElementById('mobile-tools-toggle');
+    if (headerActions) headerActions.classList.remove('open');
+    if (mobileToolsToggle) mobileToolsToggle.setAttribute('aria-expanded', 'false');
     const menu = document.getElementById('filter-dropdown-menu');
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');
