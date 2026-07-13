@@ -1,7 +1,6 @@
 import state from '../state.js';
 import { renderList } from './job-list.js';
 import { isClosedApplication } from '../application-status.js';
-import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
 // Connection Status
@@ -157,7 +156,7 @@ export function toggleSort() {
 }
 
 // ============================================================================
-// Bulk Delete Dropdown
+// Two-click Clean Up
 // ============================================================================
 
 function isOlderThan30Days(scrapedAt) {
@@ -178,10 +177,7 @@ async function bulkDeleteRequest(body) {
     throw new Error(data.detail || 'Bulk delete failed');
   }
   const data = await res.json();
-  state.allJobs = await fetch('/api/jobs').then(r => r.json());
-  renderList();
-  updateStats();
-  return data.deleted;
+  return data.deleted || 0;
 }
 
 function toastBulk(message, isError = false) {
@@ -194,57 +190,121 @@ function toastBulk(message, isError = false) {
   setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
-export function updateBulkDeleteMenu() {
-  const menu = document.getElementById('bulk-delete-menu');
-  if (!menu) return;
-
+function getCleanupCandidates() {
   const active = state.allJobs.filter(j => j.user_status !== 'deleted');
-  const skippedCount = active.filter(j => j.user_status === 'skipped').length;
-  const noGoCount = active.filter(j => (j.fit_label || '').toLowerCase() === 'no go').length;
-  const oldUnseenCount = active.filter(j => (!j.user_status || j.user_status === 'unseen') && isOlderThan30Days(j.scraped_at)).length;
+  const ids = new Set();
+  const counts = {
+    skipped: 0,
+    noGo: 0,
+    oldUnseen: 0
+  };
 
-  const items = [];
-  if (skippedCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="status" data-status="skipped" data-days="0">Delete all skipped (${skippedCount})</button>`);
-  if (noGoCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="fitlabel" data-label="no go">Delete all No Go (${noGoCount})</button>`);
-  if (oldUnseenCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="status" data-status="unseen" data-days="30">Delete unseen &gt;30d (${oldUnseenCount})</button>`);
+  active.forEach(job => {
+    const isSkipped = job.user_status === 'skipped';
+    const isNoGo = (job.fit_label || '').toLowerCase() === 'no go';
+    const isOldUnseen = (!job.user_status || job.user_status === 'unseen') && isOlderThan30Days(job.scraped_at);
 
-  menu.innerHTML = items.length
-    ? items.join('')
-    : '<span class="bulk-del-empty">Nothing to clean up</span>';
-
-  menu.querySelectorAll('.bulk-del-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const label = btn.textContent;
-      showConfirm(`${label}? This cannot be undone.`, async () => {
-        menu.classList.remove('open');
-        try {
-          const body = btn.dataset.action === 'fitlabel'
-            ? { fit_label: btn.dataset.label }
-            : { status: btn.dataset.status, older_than_days: parseInt(btn.dataset.days, 10) };
-          const deleted = await bulkDeleteRequest(body);
-          toastBulk(`Deleted ${deleted} jobs`);
-          updateBulkDeleteMenu();
-        } catch (e) {
-          toastBulk(e.message, true);
-        }
-      });
-    });
+    if (isSkipped) counts.skipped += 1;
+    if (isNoGo) counts.noGo += 1;
+    if (isOldUnseen) counts.oldUnseen += 1;
+    if (isSkipped || isNoGo || isOldUnseen) ids.add(job.job_id);
   });
+
+  return { total: ids.size, counts };
+}
+
+function updateCleanupButton(btn, armed = false) {
+  const { total, counts } = getCleanupCandidates();
+  btn.disabled = false;
+  btn.classList.toggle('confirming', armed);
+  btn.classList.remove('running', 'done', 'error');
+  btn.title = total > 0
+    ? `Skipped: ${counts.skipped} · No Go: ${counts.noGo} · Old unseen: ${counts.oldUnseen}`
+    : 'Nothing to clean up';
+
+  if (total === 0) {
+    btn.textContent = '✓ Clean';
+    btn.disabled = true;
+    btn.classList.remove('confirming');
+    return;
+  }
+
+  btn.textContent = armed ? `⚠ Confirm cleanup (${total})` : `🗑 Clean up (${total})`;
+}
+
+async function runCleanup() {
+  // Keep the old cleanup semantics, just without a dropdown:
+  // skipped jobs, No Go jobs, and unseen jobs older than 30 days.
+  const actions = [
+    { status: 'skipped', older_than_days: 0 },
+    { fit_label: 'no go' },
+    { status: 'unseen', older_than_days: 30 }
+  ];
+
+  let deleted = 0;
+  for (const body of actions) {
+    deleted += await bulkDeleteRequest(body);
+  }
+
+  state.allJobs = await fetch('/api/jobs').then(r => r.json());
+  renderList();
+  updateStats();
+  return deleted;
+}
+
+export function updateBulkDeleteMenu() {
+  const btn = document.getElementById('bulk-delete-btn');
+  if (btn) updateCleanupButton(btn, btn.classList.contains('confirming'));
 }
 
 export function initBulkDeleteDropdown() {
   const btn = document.getElementById('bulk-delete-btn');
-  const menu = document.getElementById('bulk-delete-menu');
-  if (!btn || !menu) return;
+  if (!btn) return;
 
-  btn.addEventListener('click', (e) => {
+  let confirmTimer = null;
+
+  const reset = () => {
+    if (confirmTimer) clearTimeout(confirmTimer);
+    confirmTimer = null;
+    updateCleanupButton(btn, false);
+  };
+
+  updateCleanupButton(btn, false);
+
+  btn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    const isOpen = menu.classList.toggle('open');
-    if (isOpen) updateBulkDeleteMenu();
+    if (btn.disabled || btn.classList.contains('running')) return;
+
+    if (!btn.classList.contains('confirming')) {
+      updateCleanupButton(btn, true);
+      btn.classList.add('pulse-confirm');
+      setTimeout(() => btn.classList.remove('pulse-confirm'), 650);
+      confirmTimer = setTimeout(reset, 4500);
+      return;
+    }
+
+    if (confirmTimer) clearTimeout(confirmTimer);
+    confirmTimer = null;
+    btn.classList.remove('confirming');
+    btn.classList.add('running');
+    btn.disabled = true;
+    btn.textContent = '⟳ Cleaning...';
+
+    try {
+      const deleted = await runCleanup();
+      btn.classList.remove('running');
+      btn.classList.add('done');
+      btn.textContent = `✓ Cleaned ${deleted}`;
+      toastBulk(`Cleaned up ${deleted} jobs`);
+      setTimeout(() => updateCleanupButton(btn, false), 1400);
+    } catch (e) {
+      btn.classList.remove('running');
+      btn.classList.add('error');
+      btn.disabled = false;
+      btn.textContent = '⚠ Retry cleanup';
+      toastBulk(e.message, true);
+    }
   });
 
-  document.addEventListener('click', () => menu.classList.remove('open'));
+  document.addEventListener('click', reset);
 }

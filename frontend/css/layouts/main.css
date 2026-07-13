@@ -1,8 +1,8 @@
 /* ── LAYOUT ── */
-.main { display:flex; flex:1; overflow:hidden; }
+.main { display:flex; flex:1; min-height:0; overflow:hidden; }
 
 @media (max-width: 1024px) {
-  .main { flex-direction: column; position: relative; }
+  .main { flex-direction: column; position: relative; min-height: 0; }
 
   /* Sidebar: Vollbild, scrollbar */
   .main .sidebar {

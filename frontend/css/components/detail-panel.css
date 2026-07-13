@@ -85,12 +85,14 @@
   }
   .mobile-back-btn:active { background: var(--surface2); }
 
-  /* Detail scroll: Platz für sticky action bar */
+  /* Detail scroll: Platz für fixed action bar + Mobile Browser Bottom Area */
   .detail-scroll {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: calc(172px + env(safe-area-inset-bottom, 0));
+    scroll-padding-bottom: calc(172px + env(safe-area-inset-bottom, 0));
   }
 }
 

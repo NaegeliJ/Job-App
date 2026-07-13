@@ -505,4 +505,18 @@
   .meta-item { font-size: 12px; }
   .fit-section,
   .template-section { padding: 16px 14px; }
+  .detail-body {
+    padding: 16px 14px calc(190px + env(safe-area-inset-bottom, 0));
+  }
+  .notes-section {
+    margin-top: 20px;
+    padding-top: 18px;
+  }
+  .save-b {
+    width: 100%;
+    min-height: 44px;
+    font-size: 13px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
