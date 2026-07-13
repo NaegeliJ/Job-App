@@ -1,4 +1,5 @@
 {
+  "automode_enabled": true,
   "fitcheck": {
     "endpoint": "https://ollama.com/v1/chat/completions",
     "limit": 10,
@@ -9,21 +10,25 @@
     "top_k": 65,
     "top_p": 0.95
   },
+  "interval_hours": 1,
   "linkedin": {
     "enabled": true,
-    "location": "Switzerland",
+    "location": "Schaffhausen",
     "max_results": 20,
     "queries": [
-      "Embedded Software Engineer"
+      "Konstrukteur",
+      "CAD Konstrukteur",
+      "CAD Designer Mechanical"
     ],
     "time_range": "r2592000"
   },
   "scrape": {
-    "enabled": false,
+    "enabled": true,
     "queries": [
-      "Robotics Engineer",
-      "Embedded Software Engineer"
+      "Konstrukteur",
+      "CAD Konstrukteur",
+      "CAD Designer Mechanical"
     ],
-    "rows": 5
+    "rows": 20
   }
 }

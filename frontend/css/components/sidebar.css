@@ -185,3 +185,12 @@
   opacity: 0.9;
   margin-top: 2px;
 }
+
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}

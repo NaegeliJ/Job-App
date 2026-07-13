@@ -1,2 +1,48 @@
 /* ── LAYOUT ── */
 .main { display:flex; flex:1; overflow:hidden; }
+
+@media (max-width: 1024px) {
+  .main { flex-direction: column; position: relative; }
+
+  /* Sidebar: Vollbild, scrollbar */
+  .main .sidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 100%;
+    flex: 1;
+    border-right: none;
+    overflow-y: auto;
+  }
+
+  /* Detail Panel: standardmässig versteckt */
+  .main .detail-panel {
+    display: none;
+  }
+
+  /* Job ausgewählt: Sidebar weg, Detail Vollbild */
+  .main.detail-open .sidebar {
+    display: none;
+  }
+
+  .main.detail-open .detail-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Detail Scroll und Action Bar korrekt positioniert */
+  .main.detail-open .detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .main.detail-open .action-bar {
+    flex-shrink: 0;
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    background: var(--surface);
+  }
+}

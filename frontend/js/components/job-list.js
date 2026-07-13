@@ -108,22 +108,23 @@ function buildJobItemHtml(job) {
 // Main Export Functions
 // ============================================================================
 
-export function renderList() {
-  const jobListElement = document.getElementById('job-list');
-  const countElement = document.getElementById('list-count');
-
-  // Filter and sort
+export function getVisibleJobs() {
   let filteredJobs = filterJobs(
     state.allJobs,
     state.currentFilter,
     state.searchQuery
   );
 
-  if (state.sortMode === 'date') {
-    filteredJobs = sortByDate(filteredJobs);
-  } else {
-    filteredJobs = sortByScore(filteredJobs);
-  }
+  return state.sortMode === 'date'
+    ? sortByDate(filteredJobs)
+    : sortByScore(filteredJobs);
+}
+
+export function renderList() {
+  const jobListElement = document.getElementById('job-list');
+  const countElement = document.getElementById('list-count');
+
+  const filteredJobs = getVisibleJobs();
 
   // Update count
   countElement.textContent = filteredJobs.length;

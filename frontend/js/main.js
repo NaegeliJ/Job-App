@@ -23,9 +23,14 @@ async function init() {
     renderList();
     bindEvents();
 
-    // Deep link from tracker: /?job=<id> opens the job detail
+    // Deep link from tracker/map: /?job=<id> opens the job detail
     const linkedJobId = new URLSearchParams(window.location.search).get('job');
-    if (linkedJobId) selectJob(linkedJobId);
+    if (linkedJobId) {
+      selectJob(linkedJobId);
+      if (window.innerWidth <= 1024) {
+        document.querySelector('.main')?.classList.add('detail-open');
+      }
+    }
   } catch (e) {
     console.error('Init error:', e);
     setConnectionStatus('error');
@@ -87,9 +92,18 @@ function bindEvents() {
       const item = e.target.closest('.job-item');
       if (!item) return;
       const id = item.dataset.id;
-      if (id) selectJob(id);
+      if (id) {
+        selectJob(id);
+        if (window.innerWidth <= 1024) {
+          document.querySelector('.main')?.classList.add('detail-open');
+        }
+      }
     });
   }
+
+  onClick('mobile-back-btn', () => {
+    document.querySelector('.main')?.classList.remove('detail-open');
+  });
 
   onClick('btn-i', () => setStatus('interested'));
   onClick('btn-a', () => setStatus('applied'));
@@ -162,6 +176,7 @@ document.addEventListener('keydown', e => {
     closeSettings();
     closeProfile();
     closeImportModal();
+    document.querySelector('.main')?.classList.remove('detail-open');
     const menu = document.getElementById('filter-dropdown-menu');
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');

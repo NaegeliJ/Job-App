@@ -1,12 +1,19 @@
 services:
   job-app:
     container_name: job-app
-    image: ghcr.io/meisdy/job-app:latest
     build: .
-    network_mode: host
+    restart: unless-stopped
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      - ./update.sh:/deploy/update.sh
-    restart: unless-stopped
-    command: sh -c "curl -fsSL https://raw.githubusercontent.com/Meisdy/Job-App/master/update.sh -o /deploy/update.sh 2>/dev/null || true; exec ./Job_App"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.job-app.rule=Host(`jobs.hermes.nageli.ch`)
+      - traefik.http.routers.job-app.entrypoints=web
+      - traefik.http.services.job-app.loadbalancer.server.port=8080
+    networks:
+      - hermes-net
+
+networks:
+  hermes-net:
+    external: true

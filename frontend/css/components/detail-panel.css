@@ -62,3 +62,48 @@
 /* ── CHIP VARIANTS ── */
 .chip.cy { border-color:rgba(251,191,36,0.3); color:var(--yellow); background:var(--yellow-dim); }
 .chip.cp { border-color:rgba(167,139,250,0.3); color:#a78bfa; background:rgba(167,139,250,0.08); }
+
+.mobile-back-btn { display: none; }
+
+@media (max-width: 1024px) {
+  .mobile-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--accent);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    flex-shrink: 0;
+    min-height: 48px;
+  }
+  .mobile-back-btn:active { background: var(--surface2); }
+
+  /* Recheck button: eigene Zeile auf Mobile */
+  .title-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+  .title-row > div {
+    width: 100%;
+  }
+  .recheck-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Detail scroll: Platz für sticky action bar */
+  .detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}

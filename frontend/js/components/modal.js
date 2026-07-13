@@ -2,6 +2,7 @@ import state from "../state.js";
 import { CONFIG_URL, VERSION_URL } from "../api.js";
 import { showToast } from "./actions.js";
 import { escapeHtml } from "../utils/formatting.js";
+import { geocodePlace, loadLocationFilter, saveLocationFilter } from '../utils/location.js';
 
 const PROVIDERS = {
   ollama_local: {
@@ -137,6 +138,7 @@ function setupProviderHandlers() {
   setupSourceToggle("cfg-jobsch-enabled", "cfg-jobsch-settings");
   setupSourceToggle("cfg-linkedin-enabled", "cfg-linkedin-settings");
   setupSourceToggle("cfg-automode-enabled", "cfg-automode-settings");
+  setupSourceToggle('cfg-loc-enabled', 'cfg-loc-settings');
 }
 
 function setupSourceToggle(toggleId, settingsId) {
@@ -403,8 +405,35 @@ function renderFitcheckSection(config) {
   return renderSection("Fit-Check (Advanced)", renderGrid(fields));
 }
 
+function renderLocationSection() {
+  const filter = loadLocationFilter() || {};
+  const enabled = !!filter.enabled;
+  const place = filter.place || '';
+  const radius = filter.radiusKm || 50;
+  const resolvedDisplay = filter.display ? `<div id="cfg-loc-resolved" style="font-size:11px;color:var(--green);margin-top:4px">✓ ${filter.display}</div>` : `<div id="cfg-loc-resolved" style="font-size:11px;color:var(--text3);margin-top:4px"></div>`;
+
+  const fields = renderGrid([
+    renderField('Home Location', `
+      <input class="cfg-input" id="cfg-loc-place" type="text" value="${escapeHtml(place)}" placeholder="e.g. Schaffhausen">
+      ${resolvedDisplay}
+    `),
+    renderField('Radius (km)', `<input class="cfg-input" id="cfg-loc-radius" type="number" min="5" max="500" value="${radius}">`),
+  ]);
+
+  const card = renderSourceCard(
+    'Filter jobs by location before Fit-Check',
+    'cfg-loc-enabled',
+    'cfg-loc-settings',
+    enabled,
+    fields
+  );
+
+  return renderSection('📍 Location Filter', card);
+}
+
 export function renderConfigForm(config, aiConfig) {
   return [
+    renderLocationSection(),
     renderAiSection(aiConfig || {}),
     renderScrapeSection(config),
     renderAutomodeSection(config),
@@ -525,6 +554,22 @@ export async function saveSettings() {
       body: JSON.stringify(updated),
     });
     const cfgData = await cfgRes.json();
+
+    // Save location filter to localStorage
+    const locEnabled = !!document.getElementById('cfg-loc-enabled')?.checked;
+    const locPlace = document.getElementById('cfg-loc-place')?.value.trim() || '';
+    const locRadius = parseInt(document.getElementById('cfg-loc-radius')?.value) || 50;
+
+    if (locEnabled && locPlace) {
+      try {
+        const geo = await geocodePlace(locPlace);
+        saveLocationFilter({ enabled: true, place: locPlace, radiusKm: locRadius, lat: geo.lat, lon: geo.lon, display: geo.display });
+      } catch (e) {
+        showToast('Location: ' + e.message, true);
+      }
+    } else if (!locEnabled) {
+      saveLocationFilter({ enabled: false, place: locPlace, radiusKm: locRadius });
+    }
 
     if (cfgRes.ok) {
       showToast("Config saved & reloaded");

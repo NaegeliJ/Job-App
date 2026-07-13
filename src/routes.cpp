@@ -129,6 +129,16 @@ void registerRoutes(httplib::Server& server, AppState& state, Scheduler& schedul
                     throw std::runtime_error("URL too long");
                 update_job_field(state.db, job_id, "application_url", url);
             }
+            if (body.contains("fit_label")) {
+                std::string label = body["fit_label"];
+                update_job_field(state.db, job_id, "fit_label", label);
+            }
+            if (body.contains("fit_score")) {
+                int score = body["fit_score"].get<int>();
+                if (score < 0 || score > 100)
+                    throw std::runtime_error("fit_score must be 0-100");
+                update_job_field(state.db, job_id, "fit_score", std::to_string(score));
+            }
             if (body.contains("application_status")){
                 std::string status = body["application_status"];
                 if (!std::ranges::contains(cApplicationStatuses, status) && !status.empty()) {
