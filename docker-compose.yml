@@ -3,17 +3,8 @@ services:
     container_name: job-app
     build: .
     restart: unless-stopped
+    ports:
+      - "${JOB_APP_BIND:-127.0.0.1}:${JOB_APP_PORT:-8080}:8080"
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.job-app.rule=Host(`jobs.hermes.nageli.ch`)
-      - traefik.http.routers.job-app.entrypoints=web
-      - traefik.http.services.job-app.loadbalancer.server.port=8080
-    networks:
-      - hermes-net
-
-networks:
-  hermes-net:
-    external: true

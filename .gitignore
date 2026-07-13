@@ -40,3 +40,6 @@ AGENTS.md
 TODO.md
 /build-win/
 /deps/
+
+# Local Docker Compose overrides (domains, Traefik labels, ports)
+docker-compose.override.yml
