@@ -39,6 +39,7 @@
     <div class="status-dot" id="status-dot"></div>
     <span id="status-label">—</span>
   </div>
+  <button class="mobile-tools-toggle" id="mobile-tools-toggle" aria-expanded="false" aria-controls="header-actions">☰</button>
 <div class="search-group">
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
@@ -46,18 +47,20 @@
       <span class="search-hint">Ctrl + K</span>
       <button class="search-clear" id="search-clear" aria-label="Clear search">✕</button>
     </div>
-    <button class="tool-btn scrape-btn" id="scrape-btn">⊕ Scrape Jobs</button>
-    <button class="tool-btn" id="import-job-btn">⊕ Add Job manually</button>
+  </div>
+  <div class="header-actions" id="header-actions">
+    <button class="tool-btn scrape-btn" id="scrape-btn">⊕ Scrape</button>
+    <button class="tool-btn" id="import-job-btn">⊕ Add Job</button>
     <button class="tool-btn fitcheck-btn" id="fitcheck-btn">🤖 Fit-Check</button>
+    <button class="tool-btn" id="map-btn">🗺 Map</button>
+    <button class="tool-btn" id="tracker-btn">📋 Applied</button>
+    <button class="tool-btn profile-btn" id="profile-btn">👤 Profile</button>
+    <button class="tool-btn settings-btn" id="settings-btn">⚙ Settings</button>
     <div class="bulk-delete-wrap" style="position:relative">
       <button class="tool-btn" id="bulk-delete-btn">🗑 Clean up ▾</button>
       <div class="bulk-delete-menu" id="bulk-delete-menu"></div>
     </div>
   </div>
-  <button class="tool-btn" id="map-btn" style="margin-left:auto">🗺 Map</button>
-  <button class="tool-btn" id="tracker-btn">📋 Applied</button>
-  <button class="tool-btn profile-btn" id="profile-btn">👤 Profile</button>
-  <button class="tool-btn settings-btn" id="settings-btn">⚙ Settings</button>
   <span id="update-notice" class="update-notice" style="display:none"></span>
 </header>
 

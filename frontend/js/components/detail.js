@@ -73,10 +73,13 @@ function buildHeader(job, city, mapsUrl, displayScore, displayLabel, starsHtml) 
 
       <div class="header-content">
         <div class="title-row">
-          <h1 class="job-title">${escapeHtml(job.title || 'Unknown')}</h1>
+          <h1 class="job-title">
+            <span class="job-title-text">${escapeHtml(job.title || 'Unknown')}</span>
+            <span class="fit-inline-pill ${escapeHtml(displayLabel.toLowerCase().replace(' ', ''))}">${escapeHtml(displayLabel)} ${displayScore}</span>
+          </h1>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
             ${safeJobUrl ? `<a href="${escapeHtml(safeJobUrl)}" class="view-job-btn" target="_blank" rel="noopener">${jobUrlLabel}</a>` : ''}
-            <button class="recheck-btn" id="recheck-btn" title="Re-check this job">🔄 Redo Fit-Check</button>
+            <button class="recheck-btn" id="recheck-btn" title="Re-check this job">↻ Recheck</button>
           </div>
         </div>
 
@@ -244,12 +247,12 @@ function setupRecheckButton() {
       showToast('Fit-check complete');
       recheckBtn.disabled = false;
       recheckBtn.classList.remove('running');
-      recheckBtn.innerHTML = '🔄 Redo Fit-Check';
+      recheckBtn.innerHTML = '↻ Recheck';
     } catch (e) {
       showToast('Fit-check failed: ' + e.message, true);
       recheckBtn.disabled = false;
       recheckBtn.classList.remove('running');
-      recheckBtn.innerHTML = '⚠ Redo Fit-Check';
+      recheckBtn.innerHTML = '⚠ Recheck';
       recheckBtn.classList.add('error');
       recheckBtn.title = e.message;
     }

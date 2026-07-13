@@ -85,25 +85,58 @@
   }
   .mobile-back-btn:active { background: var(--surface2); }
 
-  /* Recheck button: eigene Zeile auf Mobile */
-  .title-row {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 8px !important;
-  }
-  .title-row > div {
-    width: 100%;
-  }
-  .recheck-btn {
-    width: 100%;
-    justify-content: center;
-  }
-
   /* Detail scroll: Platz für sticky action bar */
   .detail-scroll {
     flex: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+
+@media (max-width: 1024px) {
+  .title-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+  .title-row > div {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+  .view-job-btn,
+  .recheck-btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+    text-align: center;
+    padding: 8px 10px !important;
+    font-size: 11px !important;
+    white-space: nowrap;
+  }
+  .job-title {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 18px !important;
+  }
+  .job-title-text { min-width: 0; flex: 1 1 220px; }
+  .fit-inline-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
   }
 }

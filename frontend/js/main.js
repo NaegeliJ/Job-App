@@ -84,6 +84,30 @@ function bindEvents() {
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
 
+  const mobileToolsToggle = document.getElementById('mobile-tools-toggle');
+  const headerActions = document.getElementById('header-actions');
+  if (mobileToolsToggle && headerActions) {
+    mobileToolsToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = headerActions.classList.toggle('open');
+      mobileToolsToggle.setAttribute('aria-expanded', String(isOpen));
+    });
+    headerActions.addEventListener('click', e => {
+      if (window.innerWidth > 1024) return;
+      if (e.target.closest('.bulk-delete-wrap')) return;
+      if (e.target.closest('button, a')) {
+        headerActions.classList.remove('open');
+        mobileToolsToggle.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('click', e => {
+      if (window.innerWidth > 1024) return;
+      if (headerActions.contains(e.target) || mobileToolsToggle.contains(e.target)) return;
+      headerActions.classList.remove('open');
+      mobileToolsToggle.setAttribute('aria-expanded', 'false');
+    });
+  }
+
   initBulkDeleteDropdown();
 
   const jobList = document.getElementById('job-list');
@@ -181,6 +205,10 @@ document.addEventListener('keydown', e => {
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');
     if (btn) btn.setAttribute('aria-expanded', 'false');
+    const headerActions = document.getElementById('header-actions');
+    const mobileToolsToggle = document.getElementById('mobile-tools-toggle');
+    if (headerActions) headerActions.classList.remove('open');
+    if (mobileToolsToggle) mobileToolsToggle.setAttribute('aria-expanded', 'false');
   }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault();
