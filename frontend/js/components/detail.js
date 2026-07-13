@@ -1,6 +1,7 @@
 import state from '../state.js';
 import { fmtDate, escapeHtml } from '../utils/formatting.js';
 import { setStatus, setExpired, saveNotes, setRating, showToast } from './actions.js';
+import { loadLocationFilter, checkJobLocation } from '../utils/location.js';
 
 function buildGoogleMapsUrl(zip, city) {
   const query = encodeURIComponent(`${zip} ${city} Switzerland`);
@@ -150,21 +151,30 @@ function setupActionBar(status) {
 }
 
 function setupEventHandlers(status, ratingStars) {
+  const actionBar = document.getElementById('action-bar');
   const bi = document.getElementById('btn-i');
   const ba = document.getElementById('btn-a');
   const bs = document.getElementById('btn-s');
-  const be = document.getElementById('btn-e');
 
-  if (status === 'interested') bi.classList.add('act');
-  if (status === 'applied') ba.classList.add('act');
-  if (status === 'skipped') bs.classList.add('act');
+  if (status === 'interested') bi?.classList.add('act');
+  if (status === 'applied') ba?.classList.add('act');
+  if (status === 'skipped') bs?.classList.add('act');
 
-  bi.addEventListener('click', () => setStatus('interested'));
-  ba.addEventListener('click', () => setStatus('applied'));
-  bs.addEventListener('click', () => setStatus('skipped'));
-  be.addEventListener('click', () => setExpired());
+  if (actionBar) {
+    actionBar.onclick = e => {
+      const button = e.target.closest('.ab');
+      if (!button || !actionBar.contains(button)) return;
+      e.preventDefault();
+      if (button.id === 'btn-e') {
+        setExpired();
+        return;
+      }
+      const nextStatus = button.dataset.status;
+      if (nextStatus) setStatus(nextStatus);
+    };
+  }
 
-  const stars = ratingStars.querySelectorAll('.star');
+  const stars = ratingStars ? ratingStars.querySelectorAll('.star') : [];
   stars.forEach(star => {
     star.addEventListener('click', () => {
       const rating = parseInt(star.dataset.rating);
@@ -185,6 +195,30 @@ function setupRecheckButton() {
     recheckBtn.disabled = true;
     recheckBtn.classList.add('running');
     recheckBtn.innerHTML = '<span class="spin">⟳</span> Checking...';
+
+    // Location pre-filter
+    const locFilter = loadLocationFilter();
+    if (locFilter && locFilter.enabled && locFilter.lat && state.currentJob.place) {
+      const loc = await checkJobLocation(state.currentJob.place, locFilter);
+      if (!loc.within) {
+        await fetch('/api/jobs/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: state.currentJob.job_id, fit_label: 'No Go', fit_score: 0 })
+        });
+        state.currentJob.fit_label = 'No Go';
+        state.currentJob.fit_score = 0;
+        const locIdx = state.allJobs.findIndex(j => j.job_id === state.currentJob.job_id);
+        if (locIdx !== -1) { state.allJobs[locIdx].fit_label = 'No Go'; state.allJobs[locIdx].fit_score = 0; }
+        renderDetail();
+        import('./job-list.js').then(m => m.renderList());
+        showToast('\ud83d\udccd Skipped: ' + loc.reason);
+        recheckBtn.disabled = false;
+        recheckBtn.classList.remove('running');
+        recheckBtn.innerHTML = '\ud83d\udd04 Redo Fit-Check';
+        return;
+      }
+    }
 
     try {
       const response = await fetch(`/api/jobs/${encodeURIComponent(state.currentJob.job_id)}/fitcheck`, {

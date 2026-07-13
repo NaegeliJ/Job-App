@@ -4,6 +4,7 @@ import { renderDetail } from './detail.js';
 import { renderList } from './job-list.js';
 import { updateStats, setConnectionStatus } from './header.js';
 import { showConfirm } from '../utils/confirm.js';
+import { loadLocationFilter, checkJobLocation } from '../utils/location.js';
 
 // ============================================================================
 // Helper Functions
@@ -283,6 +284,30 @@ export async function triggerFitCheck() {
   }, 1000);
 
   try {
+    // Location pre-filter: mark out-of-range jobs as No Go before AI fitcheck
+    const locFilter = loadLocationFilter();
+    if (locFilter && locFilter.enabled && locFilter.lat) {
+      showToast('Checking locations...');
+      const jobsRes = await fetch('/api/jobs');
+      const allJobs = await jobsRes.json();
+      const unchecked = allJobs.filter(j => !j.fit_label && j.user_status !== 'deleted' && j.user_status !== 'skipped');
+
+      let skipped = 0;
+      for (const job of unchecked) {
+        const loc = await checkJobLocation(job.place, locFilter);
+        if (!loc.within) {
+          // Mark as skipped with a note about location
+          await fetch('/api/jobs/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: job.job_id, fit_label: 'No Go', fit_score: 0 })
+          });
+          skipped++;
+        }
+      }
+      if (skipped > 0) showToast(`📍 ${skipped} jobs outside radius skipped`);
+    }
+
     const response = await fetch(FITCHECK_URL, { method: 'POST' });
     const data = await response.json();
 

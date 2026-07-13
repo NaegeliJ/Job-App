@@ -1,0 +1,124 @@
+.map-btn:hover { border-color: var(--turquoise); }
+
+.map-overlay {
+  z-index: 500;
+}
+
+.modal--map {
+  width: min(1100px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-modal-header {
+  flex-shrink: 0;
+}
+
+.map-subtitle {
+  margin-top: 4px;
+  color: var(--text3);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.map-status {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-glow);
+  color: var(--text2);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.map-status.error {
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.map-canvas {
+  flex: 1;
+  min-height: 420px;
+  background: var(--surface2);
+}
+
+.map-canvas .leaflet-container,
+#job-map {
+  font-family: 'Inter', sans-serif;
+}
+
+.leaflet-container {
+  background: var(--surface2);
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.35);
+}
+
+.leaflet-popup-content {
+  margin: 10px;
+}
+
+.map-popup-place {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.map-popup-job {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 8px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+}
+
+.map-popup-job:hover {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.map-popup-job strong,
+.map-popup-job span {
+  display: block;
+}
+
+.map-popup-job strong {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.map-popup-job span,
+.map-popup-more {
+  margin-top: 2px;
+  color: var(--text3);
+  font-size: 11px;
+}
+
+@media (max-width: 1024px) {
+  .modal--map {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .map-canvas {
+    min-height: 0;
+  }
+}

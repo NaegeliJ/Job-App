@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Job Radar</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   
   <!-- CSS Variables & Base -->
   <link rel="stylesheet" href="/css/variables.css">
@@ -21,12 +22,14 @@
   <link rel="stylesheet" href="/css/components/modal.css">
   <link rel="stylesheet" href="/css/components/utilities.css">
   <link rel="stylesheet" href="/css/components/console.css">
+  <link rel="stylesheet" href="/css/components/map.css">
   
   <!-- Feature Styles -->
   <link rel="stylesheet" href="/css/features/fit-assessment.css">
   <link rel="stylesheet" href="/css/features/fit-verdict.css">
   <link rel="stylesheet" href="/css/features/work-split.css">
   <link rel="stylesheet" href="/css/features/red-flags.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -46,6 +49,7 @@
     <button class="tool-btn scrape-btn" id="scrape-btn">⊕ Scrape Jobs</button>
     <button class="tool-btn" id="import-job-btn">⊕ Add Job manually</button>
     <button class="tool-btn fitcheck-btn" id="fitcheck-btn">🤖 Fit-Check</button>
+    <button class="tool-btn map-btn" id="map-btn">🗺 Map</button>
     <div class="bulk-delete-wrap" style="position:relative">
       <button class="tool-btn" id="bulk-delete-btn">🗑 Clean up ▾</button>
       <div class="bulk-delete-menu" id="bulk-delete-menu"></div>
@@ -94,6 +98,20 @@
       <button class="ab as" id="btn-s" data-status="skipped">✕ Skip</button>
       <button class="ab ae" id="btn-e">🗑️ Delete</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay map-overlay" id="map-overlay">
+  <div class="modal modal--map">
+    <div class="modal-header map-modal-header">
+      <div>
+        <span class="modal-title">🗺 Job Map</span>
+        <div class="map-subtitle" id="map-subtitle">Loading job locations…</div>
+      </div>
+      <button class="modal-close" id="map-close" aria-label="Close map">✕</button>
+    </div>
+    <div class="map-status" id="map-status" style="display:none"></div>
+    <div class="map-canvas" id="job-map"></div>
   </div>
 </div>
 

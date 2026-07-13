@@ -5,6 +5,7 @@ import { renderList, selectJob } from './components/job-list.js';
 import { closeSettings, openSettings, saveSettings } from './components/modal.js';
 import { setStatus, setRating, hoverStar, unhoverStar, setExpired, saveNotes, scrapeJobs, triggerFitCheck, openProfile, closeProfile, saveProfile, openOnboarding, importJobFromText, saveImportUrl, openImportModal, closeImportModal } from './components/actions.js';
 import { initConsole, toggleConsole } from './components/console.js';
+import { openJobMap, closeJobMap } from './components/map.js';
 
 async function init() {
   const profileRes = await fetch(PROFILE_GET_URL);
@@ -70,6 +71,7 @@ function bindEvents() {
   onClick('profile-redo-btn', openOnboarding);
   onClick('onboard-btn', openOnboarding);
   onClick('fitcheck-btn', triggerFitCheck);
+  onClick('map-btn', openJobMap);
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
 
@@ -81,15 +83,25 @@ function bindEvents() {
       const item = e.target.closest('.job-item');
       if (!item) return;
       const id = item.dataset.id;
-      if (id) selectJob(id);
+      if (id) {
+        selectJob(id);
+        if (window.innerWidth <= 1024) {
+          document.querySelector('.main')?.classList.add('detail-open');
+        }
+      }
     });
   }
+
+  onClick('mobile-back-btn', () => {
+    document.querySelector('.main')?.classList.remove('detail-open');
+  });
 
   onClick('btn-i', () => setStatus('interested'));
   onClick('btn-a', () => setStatus('applied'));
   onClick('btn-s', () => setStatus('skipped'));
   onClick('btn-e', setExpired);
 
+  onClick('map-close', closeJobMap);
   onClick('modal-close', closeSettings);
   onClick('modal-cancel-btn', closeSettings);
   onClick('modal-save-btn', saveSettings);
@@ -99,6 +111,14 @@ function bindEvents() {
   onClick('import-btn', importJobFromText);
   onClick('import-url-save-btn', saveImportUrl);
   onClick('import-url-skip-btn', closeImportModal);
+
+  const mapOverlay = document.getElementById('map-overlay');
+  if (mapOverlay) {
+    mapOverlay.addEventListener('mousedown', e => { state._mapModalMousedownTarget = e.target; });
+    mapOverlay.addEventListener('click', e => {
+      if (e.target === mapOverlay && state._mapModalMousedownTarget === mapOverlay) closeJobMap();
+    });
+  }
 
   const modalOverlay = document.getElementById('settings-overlay');
   if (modalOverlay) {
@@ -156,6 +176,7 @@ document.addEventListener('keydown', e => {
     closeSettings();
     closeProfile();
     closeImportModal();
+    closeJobMap();
     const menu = document.getElementById('filter-dropdown-menu');
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');
@@ -197,25 +218,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 export { init, bindEvents };
-// Mobile navigation
-function initMobileNav() {
-  const main = document.querySelector('.main');
-  const backBtn = document.getElementById('mobile-back-btn');
-  if (!backBtn || !main) return;
-
-  // Show detail panel when job selected
-  const origSelectJob = window._selectJob;
-  document.getElementById('job-list').addEventListener('click', () => {
-    if (window.innerWidth <= 768) {
-      main.classList.add('detail-open');
-    }
-  });
-
-  // Back button
-  backBtn.addEventListener('click', () => {
-    main.classList.remove('detail-open');
-  });
-}
-
-document.addEventListener('DOMContentLoaded', initMobileNav);
-if (document.readyState !== 'loading') initMobileNav();
