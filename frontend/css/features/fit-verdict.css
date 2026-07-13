@@ -237,10 +237,22 @@
 }
 
 .template-text {
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--text);
-  white-space: pre-wrap;
+  color:var(--text2);
+  font-size:14px;
+  line-height:1.6;
+  white-space:pre-wrap;
+}
+
+.template-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.template-link:hover {
+  color: var(--turquoise);
 }
 
 .template-text h1,

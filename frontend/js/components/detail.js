@@ -24,10 +24,66 @@ function getFitVerdict(job) {
   };
 }
 
-function cleanTemplateText(text) {
+function decodeHtmlEntities(text) {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text || '';
+  return textarea.value;
+}
+
+function normalizeWebsiteUrl(url) {
+  const raw = decodeHtmlEntities(String(url || '').trim()).replace(/[\u200B-\u200D\uFEFF]/g, '');
+  if (!raw) return '';
+  const candidate = raw.startsWith('www.') ? `https://${raw}` : raw;
+  if (!/^https?:\/\//i.test(candidate)) return '';
+  try {
+    return new URL(candidate).href;
+  } catch {
+    return '';
+  }
+}
+
+function getWebsiteName(url) {
+  const normalized = normalizeWebsiteUrl(url);
+  if (!normalized) return '';
+  try {
+    const host = new URL(normalized).hostname.replace(/^www\./i, '');
+    if (/linkedin\.com$/i.test(host)) return 'LinkedIn';
+    if (/jobs\.ch$/i.test(host)) return 'jobs.ch';
+    return host;
+  } catch {
+    return '';
+  }
+}
+
+function prepareTemplateText(text) {
   if (!text) return '';
 
-  let cleaned = text.replace(/^["']|["']$/g, '');
+  let cleaned = String(text).replace(/^["']|["']$/g, '');
+
+  // Preserve links from common Markdown/Jina output before generic linkifying.
+  cleaned = cleaned.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+)\)/gi, (_m, alt, url) => {
+    const safeUrl = normalizeWebsiteUrl(url);
+    const label = (alt || '').replace(/^Image\s+\d+:\s*/i, '').trim();
+    return safeUrl ? `\n${safeUrl}\n` : label;
+  });
+  cleaned = cleaned.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|www\.[^\s)]+)\)/gi, (_m, label, url) => {
+    const safeUrl = normalizeWebsiteUrl(url);
+    const plainLabel = decodeHtmlEntities(label.replace(/\s+/g, ' ').trim());
+    if (!safeUrl) return plainLabel;
+    if (!plainLabel || normalizeWebsiteUrl(plainLabel) === safeUrl) return safeUrl;
+    return `${plainLabel} ${safeUrl}\n`;
+  });
+
+  // Preserve href targets from existing HTML before stripping tags. If the visible
+  // anchor text is not the URL (e.g. "Apply here"), append the URL so it can be
+  // linkified below instead of disappearing with the tag.
+  cleaned = cleaned.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, label) => {
+    const safeHref = normalizeWebsiteUrl(href);
+    const plainLabel = decodeHtmlEntities(label.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    if (!safeHref) return plainLabel;
+    if (!plainLabel || normalizeWebsiteUrl(plainLabel) === safeHref) return safeHref;
+    return `${plainLabel} ${safeHref}`;
+  });
 
   cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
   cleaned = cleaned.replace(/<\/p>/gi, '\n\n');
@@ -36,13 +92,10 @@ function cleanTemplateText(text) {
   cleaned = cleaned.replace(/<\/li>/gi, '\n');
   cleaned = cleaned.replace(/<[^>]+>/g, '');
 
-  const textarea = document.createElement('textarea');
-  textarea.innerHTML = cleaned;
-  cleaned = textarea.value;
-
-  cleaned = cleaned.replace(/<[^>]+>/g, '');
+  cleaned = decodeHtmlEntities(cleaned);
 
   cleaned = cleaned
+    .replace(/\r\n?/g, '\n')
     .replace(/\n\s*\n\s*\n+/g, '\n\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
@@ -54,12 +107,61 @@ function cleanTemplateText(text) {
   return cleaned;
 }
 
+function stripTrailingUrlPunctuation(url) {
+  let clean = url;
+  let suffix = '';
+  while (/[.,;:!?)]$/.test(clean)) {
+    // Keep a closing parenthesis when the URL itself contains the matching opener.
+    if (clean.endsWith(')')) {
+      const opens = (clean.match(/\(/g) || []).length;
+      const closes = (clean.match(/\)/g) || []).length;
+      if (closes <= opens) break;
+    }
+    suffix = clean.slice(-1) + suffix;
+    clean = clean.slice(0, -1);
+  }
+  return { clean, suffix };
+}
+
+function linkifyTemplateText(text) {
+  const source = text || '';
+  const urlPattern = /\b(?:https?:\/\/[^\s<\]\[()]+|www\.[^\s<\]\[()]+)/gi;
+  let html = '';
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlPattern.exec(source)) !== null) {
+    const raw = match[0];
+    const { clean, suffix } = stripTrailingUrlPunctuation(raw);
+    const href = normalizeWebsiteUrl(clean);
+    html += escapeHtml(source.slice(lastIndex, match.index));
+    if (href) {
+      const label = clean.length > 70 ? `${clean.slice(0, 67)}…` : clean;
+      html += `<a href="${escapeHtml(href)}" class="template-link" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>${escapeHtml(suffix)}`;
+    } else {
+      html += escapeHtml(raw);
+    }
+    lastIndex = match.index + raw.length;
+  }
+
+  html += escapeHtml(source.slice(lastIndex));
+  return html.replace(/\n/g, '<br>');
+}
+
 function buildHeader(job, city, mapsUrl, displayScore, displayLabel, starsHtml) {
   const zip = escapeHtml(job.zipcode || '');
-  const detailUrl = /^https?:\/\//.test(job.detail_url || '') ? job.detail_url : '';
-  const appUrl = /^https?:\/\//.test(job.application_url || '') ? job.application_url : '';
-  const safeJobUrl = detailUrl || appUrl;
-  const jobUrlLabel = job.source === 'linkedin' ? 'View on LinkedIn ↗' : (detailUrl ? 'View on jobs.ch ↗' : 'View Job ↗');
+  const detailUrl = normalizeWebsiteUrl(job.detail_url || '');
+  const appUrl = normalizeWebsiteUrl(job.application_url || '');
+  const detailName = getWebsiteName(detailUrl);
+  const appName = getWebsiteName(appUrl);
+  const linkButtons = [];
+
+  if (detailUrl) {
+    linkButtons.push(`<a href="${escapeHtml(detailUrl)}" class="view-job-btn" target="_blank" rel="noopener noreferrer">${escapeHtml(detailName ? `View on ${detailName} ↗` : 'View Job ↗')}</a>`);
+  }
+  if (appUrl && appUrl !== detailUrl) {
+    linkButtons.push(`<a href="${escapeHtml(appUrl)}" class="view-job-btn apply-link-btn" target="_blank" rel="noopener noreferrer">${escapeHtml(appName ? `Apply on ${appName} ↗` : 'Apply ↗')}</a>`);
+  }
 
   return `
     <div class="detail-header">
@@ -78,7 +180,7 @@ function buildHeader(job, city, mapsUrl, displayScore, displayLabel, starsHtml) 
             <span class="fit-inline-pill ${escapeHtml(displayLabel.toLowerCase().replace(' ', ''))}">${escapeHtml(displayLabel)} ${displayScore}</span>
           </h1>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            ${safeJobUrl ? `<a href="${escapeHtml(safeJobUrl)}" class="view-job-btn" target="_blank" rel="noopener">${jobUrlLabel}</a>` : ''}
+            ${linkButtons.join('')}
             <button class="recheck-btn" id="recheck-btn" title="Re-check this job">↻ Recheck</button>
           </div>
         </div>
@@ -112,7 +214,7 @@ function buildFitSection(job) {
 
 function buildTemplateSection(text) {
   if (!text) return '';
-  const safe = escapeHtml(text).replace(/\n/g, '<br>');
+  const safe = linkifyTemplateText(text);
   return `
     <div class="template-section">
       <div class="section-header">
@@ -218,7 +320,7 @@ function setupRecheckButton() {
         showToast('\ud83d\udccd Skipped: ' + loc.reason);
         recheckBtn.disabled = false;
         recheckBtn.classList.remove('running');
-        recheckBtn.innerHTML = '\ud83d\udd04 Redo Fit-Check';
+        recheckBtn.innerHTML = '↻ Recheck';
         return;
       }
     }
@@ -268,7 +370,7 @@ export function renderDetail() {
   const mapsUrl = buildGoogleMapsUrl(job.zipcode || '', city);
 
   const fitVerdict = getFitVerdict(job);
-  const templateText = cleanTemplateText(job.template_text);
+  const templateText = prepareTemplateText(job.template_text);
   const starsHtml = generateStarsHtml(job.rating);
 
   document.getElementById('detail-scroll').innerHTML =
