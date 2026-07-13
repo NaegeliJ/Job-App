@@ -74,6 +74,7 @@ function bindEvents() {
   onClick('profile-redo-btn', openOnboarding);
   onClick('onboard-btn', openOnboarding);
   onClick('fitcheck-btn', triggerFitCheck);
+  onClick('map-btn', () => { window.location.href = '/map.html'; });
   onClick('tracker-btn', () => { window.location.href = '/tracker.html'; });
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
