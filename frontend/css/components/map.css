@@ -137,3 +137,46 @@
 .unlocated-list a { color:var(--accent); text-decoration:none; }
 .unlocated-list a:hover { text-decoration:underline; }
 .unlocated-item { padding:3px 0; color:var(--text2); }
+
+/* ── Mobile ─────────────────────────────────────────────────────── */
+/* The one header row can't hold back + logo + 8 chips + controls on a phone.
+   Keep back/logo/count as the top row; drop filters and controls onto their
+   own full-width rows below (chips scroll horizontally, controls wrap). */
+@media (max-width: 1024px) {
+  .map-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .map-header .logo { font-size: 13px; }
+  .map-count { margin-left: auto; }
+
+  .map-filters {
+    order: 3;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .map-filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0;
+    min-height: 32px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .map-home-controls {
+    order: 4;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+  .radius-label { flex: 1; min-width: 0; }
+  .radius-label input[type=range] { width: 100%; }
+  .tool-btn {
+    min-height: 40px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
