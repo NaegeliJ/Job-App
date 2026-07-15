@@ -6,6 +6,20 @@ import { closeSettings, openSettings, saveSettings } from './components/modal.js
 import { setStatus, setRating, hoverStar, unhoverStar, setExpired, saveNotes, scrapeJobs, triggerFitCheck, openProfile, closeProfile, saveProfile, openOnboarding, importJobFromText, saveImportUrl, openImportModal, closeImportModal } from './components/actions.js';
 import { initConsole, toggleConsole } from './components/console.js';
 
+const MOBILE_BREAKPOINT = 1024;
+
+function isMobileView() {
+  return window.innerWidth <= MOBILE_BREAKPOINT;
+}
+
+// Collapse the mobile ☰ tools panel and reset its toggle state.
+function closeMobileTools() {
+  const toggle = document.getElementById('mobile-tools-toggle');
+  const headerActions = document.getElementById('header-actions');
+  if (headerActions) headerActions.classList.remove('open');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
 async function init() {
   const profileRes = await fetch(PROFILE_GET_URL);
   if (profileRes.status === 404) {
@@ -79,6 +93,24 @@ function bindEvents() {
   onClick('settings-btn', openSettings);
   onClick('sort-btn', toggleSort);
 
+  const mobileToolsToggle = document.getElementById('mobile-tools-toggle');
+  const headerActions = document.getElementById('header-actions');
+  if (mobileToolsToggle && headerActions) {
+    mobileToolsToggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = headerActions.classList.toggle('open');
+      mobileToolsToggle.setAttribute('aria-expanded', String(isOpen));
+    });
+    headerActions.addEventListener('click', e => {
+      if (isMobileView() && e.target.closest('button, a')) closeMobileTools();
+    });
+    document.addEventListener('click', e => {
+      if (!isMobileView()) return;
+      if (headerActions.contains(e.target) || mobileToolsToggle.contains(e.target)) return;
+      closeMobileTools();
+    });
+  }
+
   initBulkDeleteDropdown();
 
   const jobList = document.getElementById('job-list');
@@ -87,9 +119,18 @@ function bindEvents() {
       const item = e.target.closest('.job-item');
       if (!item) return;
       const id = item.dataset.id;
-      if (id) selectJob(id);
+      if (id) {
+        selectJob(id);
+        if (isMobileView()) {
+          document.querySelector('.main')?.classList.add('detail-open');
+        }
+      }
     });
   }
+
+  onClick('mobile-back-btn', () => {
+    document.querySelector('.main')?.classList.remove('detail-open');
+  });
 
   onClick('btn-i', () => setStatus('interested'));
   onClick('btn-a', () => setStatus('applied'));
@@ -162,6 +203,8 @@ document.addEventListener('keydown', e => {
     closeSettings();
     closeProfile();
     closeImportModal();
+    document.querySelector('.main')?.classList.remove('detail-open');
+    closeMobileTools();
     const menu = document.getElementById('filter-dropdown-menu');
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');

@@ -13,3 +13,11 @@ body {
   flex-direction:column;
   overflow:hidden;
 }
+
+
+@supports (height: 100dvh) {
+  body {
+    height:100dvh;
+    min-height:100dvh;
+  }
+}

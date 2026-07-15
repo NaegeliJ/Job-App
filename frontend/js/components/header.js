@@ -1,7 +1,6 @@
 import state from '../state.js';
 import { renderList } from './job-list.js';
 import { isClosedApplication } from '../application-status.js';
-import { showConfirm } from '../utils/confirm.js';
 
 // ============================================================================
 // Connection Status
@@ -157,7 +156,7 @@ export function toggleSort() {
 }
 
 // ============================================================================
-// Bulk Delete Dropdown
+// Clean Up (bulk delete popover)
 // ============================================================================
 
 function isOlderThan30Days(scrapedAt) {
@@ -165,6 +164,50 @@ function isOlderThan30Days(scrapedAt) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 30);
   return new Date(scrapedAt) < cutoff;
+}
+
+// Single source of truth: each category knows how to match a job locally (for
+// the counts we show) and how to ask the server to delete it. Keeps the
+// displayed breakdown and the actual deletion from drifting apart.
+// How long the "✓ Cleaned N" confirmation stays before the button resets.
+const CLEANUP_DONE_FLASH_MS = 1400;
+
+const CLEANUP_CATEGORIES = [
+  {
+    key: 'skipped',
+    label: 'Skipped',
+    matches: job => job.user_status === 'skipped',
+    requestBody: { status: 'skipped', older_than_days: 0 }
+  },
+  {
+    key: 'noGo',
+    label: 'No Go',
+    matches: job => (job.fit_label || '').toLowerCase() === 'no go',
+    requestBody: { fit_label: 'no go' }
+  },
+  {
+    key: 'oldUnseen',
+    label: 'Unseen > 30 days',
+    matches: job => (!job.user_status || job.user_status === 'unseen') && isOlderThan30Days(job.scraped_at),
+    requestBody: { status: 'unseen', older_than_days: 30 }
+  }
+];
+
+function cleanupElements() {
+  return {
+    button: document.getElementById('bulk-delete-btn'),
+    menu: document.getElementById('bulk-delete-menu')
+  };
+}
+
+// Distinct jobs matched by any of the given categories (one job may match several).
+function countDistinct(categories) {
+  const active = state.allJobs.filter(job => job.user_status !== 'deleted');
+  const ids = new Set();
+  active.forEach(job => {
+    if (categories.some(category => category.matches(job))) ids.add(job.job_id);
+  });
+  return ids.size;
 }
 
 async function bulkDeleteRequest(body) {
@@ -178,10 +221,7 @@ async function bulkDeleteRequest(body) {
     throw new Error(data.detail || 'Bulk delete failed');
   }
   const data = await res.json();
-  state.allJobs = await fetch('/api/jobs').then(r => r.json());
-  renderList();
-  updateStats();
-  return data.deleted;
+  return data.deleted || 0;
 }
 
 function toastBulk(message, isError = false) {
@@ -194,57 +234,123 @@ function toastBulk(message, isError = false) {
   setTimeout(() => toast.classList.remove('show'), 2000);
 }
 
+function closeMenu() {
+  const { button, menu } = cleanupElements();
+  if (menu) menu.classList.remove('open');
+  if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function selectedCategories(menu) {
+  return CLEANUP_CATEGORIES.filter(category =>
+    menu.querySelector(`input[data-key="${category.key}"]`)?.checked
+  );
+}
+
+// The confirm button always shows how many distinct jobs the current selection deletes.
+function refreshConfirmButton(menu) {
+  const confirmButton = menu.querySelector('.cleanup-confirm');
+  if (!confirmButton) return;
+  const count = countDistinct(selectedCategories(menu));
+  confirmButton.textContent = `Delete ${count}`;
+  confirmButton.disabled = count === 0;
+}
+
+function renderMenu(menu) {
+  const available = CLEANUP_CATEGORIES
+    .map(category => ({ category, count: countDistinct([category]) }))
+    .filter(entry => entry.count > 0);
+
+  if (available.length === 0) {
+    menu.innerHTML = '<span class="bulk-del-empty">Nothing to clean up</span>';
+    return;
+  }
+
+  const rows = available.map(({ category, count }) => `
+    <label class="cleanup-row">
+      <input type="checkbox" data-key="${category.key}" checked>
+      <span>${category.label}</span>
+      <span class="cleanup-count">${count}</span>
+    </label>`).join('');
+
+  menu.innerHTML = `${rows}
+    <div class="cleanup-foot">
+      <button class="cleanup-confirm"></button>
+      <button class="cleanup-cancel">Cancel</button>
+    </div>`;
+
+  refreshConfirmButton(menu);
+  menu.querySelectorAll('input[data-key]').forEach(input =>
+    input.addEventListener('change', () => refreshConfirmButton(menu))
+  );
+  menu.querySelector('.cleanup-cancel').addEventListener('click', closeMenu);
+  menu.querySelector('.cleanup-confirm').addEventListener('click', () => runCleanup(menu));
+}
+
+async function runCleanup(menu) {
+  const categories = selectedCategories(menu);
+  if (categories.length === 0) return;
+
+  const { button } = cleanupElements();
+  closeMenu();
+  button.classList.remove('done', 'error');
+  button.classList.add('running');
+  button.disabled = true;
+  button.textContent = '⟳ Cleaning...';
+
+  try {
+    let deleted = 0;
+    for (const category of categories) {
+      deleted += await bulkDeleteRequest(category.requestBody);
+    }
+    state.allJobs = await fetch('/api/jobs').then(r => r.json());
+    renderList();
+    updateStats();
+    toastBulk(`Cleaned up ${deleted} jobs`);
+    button.classList.remove('running');
+    button.classList.add('done');
+    button.textContent = `✓ Cleaned ${deleted}`;
+    setTimeout(updateCleanupButton, CLEANUP_DONE_FLASH_MS);
+  } catch (e) {
+    button.classList.remove('running');
+    button.classList.add('error');
+    button.disabled = false;
+    button.textContent = '⚠ Retry';
+    toastBulk(e.message, true);
+  }
+}
+
+function updateCleanupButton() {
+  const { button } = cleanupElements();
+  if (!button) return;
+  const total = countDistinct(CLEANUP_CATEGORIES);
+  button.classList.remove('running', 'done', 'error');
+  button.disabled = total === 0;
+  button.title = total > 0 ? 'Review and delete skipped, No Go and old unseen jobs' : 'Nothing to clean up';
+  button.textContent = total > 0 ? `🗑 Clean up (${total})` : '✓ Clean';
+}
+
+// Kept name for callers (console.js) that refresh the header after data changes.
 export function updateBulkDeleteMenu() {
-  const menu = document.getElementById('bulk-delete-menu');
-  if (!menu) return;
-
-  const active = state.allJobs.filter(j => j.user_status !== 'deleted');
-  const skippedCount = active.filter(j => j.user_status === 'skipped').length;
-  const noGoCount = active.filter(j => (j.fit_label || '').toLowerCase() === 'no go').length;
-  const oldUnseenCount = active.filter(j => (!j.user_status || j.user_status === 'unseen') && isOlderThan30Days(j.scraped_at)).length;
-
-  const items = [];
-  if (skippedCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="status" data-status="skipped" data-days="0">Delete all skipped (${skippedCount})</button>`);
-  if (noGoCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="fitlabel" data-label="no go">Delete all No Go (${noGoCount})</button>`);
-  if (oldUnseenCount > 0)
-    items.push(`<button class="bulk-del-item" data-action="status" data-status="unseen" data-days="30">Delete unseen &gt;30d (${oldUnseenCount})</button>`);
-
-  menu.innerHTML = items.length
-    ? items.join('')
-    : '<span class="bulk-del-empty">Nothing to clean up</span>';
-
-  menu.querySelectorAll('.bulk-del-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const label = btn.textContent;
-      showConfirm(`${label}? This cannot be undone.`, async () => {
-        menu.classList.remove('open');
-        try {
-          const body = btn.dataset.action === 'fitlabel'
-            ? { fit_label: btn.dataset.label }
-            : { status: btn.dataset.status, older_than_days: parseInt(btn.dataset.days, 10) };
-          const deleted = await bulkDeleteRequest(body);
-          toastBulk(`Deleted ${deleted} jobs`);
-          updateBulkDeleteMenu();
-        } catch (e) {
-          toastBulk(e.message, true);
-        }
-      });
-    });
-  });
+  updateCleanupButton();
+  const { menu } = cleanupElements();
+  if (menu && menu.classList.contains('open')) renderMenu(menu);
 }
 
 export function initBulkDeleteDropdown() {
-  const btn = document.getElementById('bulk-delete-btn');
-  const menu = document.getElementById('bulk-delete-menu');
-  if (!btn || !menu) return;
+  const { button, menu } = cleanupElements();
+  if (!button || !menu) return;
 
-  btn.addEventListener('click', (e) => {
+  updateCleanupButton();
+
+  button.addEventListener('click', e => {
     e.stopPropagation();
+    if (button.classList.contains('running')) return;
     const isOpen = menu.classList.toggle('open');
-    if (isOpen) updateBulkDeleteMenu();
+    button.setAttribute('aria-expanded', String(isOpen));
+    if (isOpen) renderMenu(menu);
   });
 
-  document.addEventListener('click', () => menu.classList.remove('open'));
+  // Clicks inside the popover must not reach the close-on-outside handler.
+  menu.addEventListener('click', e => e.stopPropagation());
+  document.addEventListener('click', closeMenu);
 }

@@ -21,11 +21,7 @@ header {
   flex-shrink:0;
 }
 
-/* Centered search group with tools */
 .search-group {
-  position:absolute;
-  left:50%;
-  transform:translateX(-50%);
   display:flex;
   align-items:center;
   gap:8px;
@@ -157,25 +153,53 @@ header {
   background:var(--surface2, var(--surface));
   border:1px solid var(--border2);
   border-radius:6px;
-  min-width:200px;
+  min-width:230px;
   z-index:200;
   overflow:hidden;
 }
 .bulk-delete-menu.open { display:block; }
-.bulk-del-item {
-  display:block;
-  width:100%;
+
+/* Checkbox row: pick which categories to purge before confirming */
+.cleanup-row {
+  display:flex;
+  align-items:center;
+  gap:8px;
   padding:8px 12px;
-  background:transparent;
-  border:none;
-  color:var(--red, #f87171);
   font-family:'JetBrains Mono', monospace;
   font-size:10px;
-  text-align:left;
+  color:var(--text2);
   cursor:pointer;
   white-space:nowrap;
 }
-.bulk-del-item:hover { background:var(--accent-glow); }
+.cleanup-row:hover { background:var(--accent-glow); }
+.cleanup-row input { accent-color:var(--red, #f87171); cursor:pointer; }
+.cleanup-row .cleanup-count { margin-left:auto; color:var(--text3); }
+
+.cleanup-foot {
+  display:flex;
+  gap:8px;
+  padding:8px 12px;
+  border-top:1px solid var(--border2);
+}
+.cleanup-confirm, .cleanup-cancel {
+  flex:1;
+  padding:6px 8px;
+  border-radius:4px;
+  font-family:'JetBrains Mono', monospace;
+  font-size:10px;
+  cursor:pointer;
+}
+.cleanup-confirm {
+  border:1px solid rgba(248,113,113,0.55);
+  background:var(--red-dim, rgba(248,113,113,0.1));
+  color:var(--red, #f87171);
+}
+.cleanup-confirm:disabled { opacity:0.45; cursor:not-allowed; }
+.cleanup-cancel {
+  border:1px solid var(--border2);
+  background:transparent;
+  color:var(--text3);
+}
 .bulk-del-empty {
   display:block;
   padding:8px 12px;
@@ -193,4 +217,107 @@ header {
   padding:3px 7px;
   white-space:nowrap;
   flex-shrink:0;
+}
+
+
+.cleanup-btn.running { color: var(--yellow, #fbbf24); border-color: rgba(251,191,36,0.45); cursor: wait; }
+.cleanup-btn.done { color: var(--green, #34d399); border-color: rgba(52,211,153,0.45); background: var(--green-dim, rgba(52,211,153,0.1)); }
+.cleanup-btn.error { color: var(--red, #f87171); border-color: rgba(248,113,113,0.55); }
+
+.mobile-tools-toggle { display: none; }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.header-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Desktop: two balanced groups. Primary actions cluster with the centered
+   search; navigation holds the right. display:contents dissolves the wrapper so
+   the two groups place directly in the header; the two auto margins split the
+   free space, centering the search+primary cluster. All in normal flow, so it
+   reflows on zoom instead of overlapping (the old absolute search overlapped). */
+@media (min-width: 1025px) {
+  .header-actions { display: contents; }
+  .search-group { margin-left: auto; min-width: 0; }
+  .search-wrap { width: 360px; max-width: 100%; }
+  .header-nav { margin-left: auto; }
+}
+
+@media (max-width: 1024px) {
+  header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    height: auto;
+    padding: 8px 10px;
+    position: relative;
+    z-index: 500;
+  }
+  .logo { font-size: 10px; min-width: 0; }
+  .status-dot-wrap { justify-self: end; margin-left: 0; min-width: 0; }
+  .search-hint { display: none; }
+  .update-notice { display: none !important; }
+  .mobile-tools-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    background: var(--surface2);
+    color: var(--text2);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-tools-toggle[aria-expanded="true"] {
+    color: var(--accent);
+    border-color: rgba(96,165,250,0.45);
+    background: var(--accent-dim);
+  }
+  .search-group {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+  .search-wrap { width: 100%; min-width: 0; }
+  .header-actions {
+    display: none;
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-left: 0;
+    padding: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+    gap: 6px;
+  }
+  .header-actions.open { display: flex; flex-direction: column; gap: 8px; }
+  .header-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .header-actions .tool-btn,
+  .header-actions .bulk-delete-wrap,
+  .header-actions .bulk-delete-wrap > .tool-btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .header-actions .tool-btn {
+    min-height: 42px;
+    padding: 9px 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
+  }
+  .header-actions .bulk-delete-wrap { grid-column: 1 / -1; }
 }

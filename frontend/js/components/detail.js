@@ -72,10 +72,13 @@ function buildHeader(job, city, mapsUrl, displayScore, displayLabel, starsHtml) 
 
       <div class="header-content">
         <div class="title-row">
-          <h1 class="job-title">${escapeHtml(job.title || 'Unknown')}</h1>
+          <h1 class="job-title">
+            <span class="job-title-text">${escapeHtml(job.title || 'Unknown')}</span>
+            <span class="fit-inline-pill ${escapeHtml(displayLabel.toLowerCase().replace(' ', ''))}">${escapeHtml(displayLabel)} ${displayScore}</span>
+          </h1>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
             ${safeJobUrl ? `<a href="${escapeHtml(safeJobUrl)}" class="view-job-btn" target="_blank" rel="noopener">${jobUrlLabel}</a>` : ''}
-            <button class="recheck-btn" id="recheck-btn" title="Re-check this job">🔄 Redo Fit-Check</button>
+            <button class="recheck-btn" id="recheck-btn" title="Re-check this job">↻ Recheck</button>
           </div>
         </div>
 
@@ -150,21 +153,30 @@ function setupActionBar(status) {
 }
 
 function setupEventHandlers(status, ratingStars) {
+  const actionBar = document.getElementById('action-bar');
   const bi = document.getElementById('btn-i');
   const ba = document.getElementById('btn-a');
   const bs = document.getElementById('btn-s');
-  const be = document.getElementById('btn-e');
 
-  if (status === 'interested') bi.classList.add('act');
-  if (status === 'applied') ba.classList.add('act');
-  if (status === 'skipped') bs.classList.add('act');
+  if (status === 'interested') bi?.classList.add('act');
+  if (status === 'applied') ba?.classList.add('act');
+  if (status === 'skipped') bs?.classList.add('act');
 
-  bi.addEventListener('click', () => setStatus('interested'));
-  ba.addEventListener('click', () => setStatus('applied'));
-  bs.addEventListener('click', () => setStatus('skipped'));
-  be.addEventListener('click', () => setExpired());
+  if (actionBar) {
+    actionBar.onclick = e => {
+      const button = e.target.closest('.ab');
+      if (!button || !actionBar.contains(button)) return;
+      e.preventDefault();
+      if (button.id === 'btn-e') {
+        setExpired();
+        return;
+      }
+      const nextStatus = button.dataset.status;
+      if (nextStatus) setStatus(nextStatus);
+    };
+  }
 
-  const stars = ratingStars.querySelectorAll('.star');
+  const stars = ratingStars ? ratingStars.querySelectorAll('.star') : [];
   stars.forEach(star => {
     star.addEventListener('click', () => {
       const rating = parseInt(star.dataset.rating);
@@ -210,12 +222,12 @@ function setupRecheckButton() {
       showToast('Fit-check complete');
       recheckBtn.disabled = false;
       recheckBtn.classList.remove('running');
-      recheckBtn.innerHTML = '🔄 Redo Fit-Check';
+      recheckBtn.innerHTML = '↻ Recheck';
     } catch (e) {
       showToast('Fit-check failed: ' + e.message, true);
       recheckBtn.disabled = false;
       recheckBtn.classList.remove('running');
-      recheckBtn.innerHTML = '⚠ Redo Fit-Check';
+      recheckBtn.innerHTML = '⚠ Recheck';
       recheckBtn.classList.add('error');
       recheckBtn.title = e.message;
     }
