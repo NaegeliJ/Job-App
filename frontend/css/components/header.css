@@ -303,7 +303,7 @@ header {
     box-shadow: 0 12px 28px rgba(0,0,0,0.28);
     gap: 6px;
   }
-  .header-actions.open { display: flex; flex-direction: column; gap: 8px; }
+  .header-actions.open { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
   .header-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .header-actions .tool-btn,
   .header-actions .bulk-delete-wrap,
@@ -319,5 +319,4 @@ header {
     text-overflow: ellipsis;
     font-size: 11px;
   }
-  .header-actions .bulk-delete-wrap { grid-column: 1 / -1; }
 }
