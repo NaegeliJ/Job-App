@@ -124,3 +124,11 @@ rm -rf ~/Job-App
 ```
 
 **Windows exe:** delete the unzipped folder. Nothing is installed system-wide.
+
+## License
+
+Copyright (C) 2026 Sandy Meister.
+
+Licensed under the **GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](LICENSE).
+
+Because this is a network application, the AGPL requires that users interacting with a running instance can obtain its source. The in-app footer links here: <https://github.com/Meisdy/Job-App>.
