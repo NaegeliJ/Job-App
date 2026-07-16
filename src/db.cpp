@@ -107,7 +107,7 @@ void insert_or_update_job(sqlite3 *db, const Job &job) {
 }
 
 int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
-    exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE LOWER(fit_label) = LOWER(?)", {fit_label});
+    exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE LOWER(fit_label) = LOWER(?) AND user_status != 'deleted'", {fit_label});
     return sqlite3_changes(db);
 }
 
