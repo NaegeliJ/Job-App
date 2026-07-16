@@ -18,7 +18,7 @@
 
 ## Performance
 - [ ] `/api/jobs` sends every column of every job (~13 MB, 2386 rows). Return list columns only; add `/api/jobs/:id/detail` for `fit_reasoning`, `fit_summary`, `template_text`, fetched when a job is opened
-- [ ] `/api/jobs` includes `user_status='deleted'` rows (1766 of 2386) that are never rendered. Filter server-side, separate endpoint or query param for trash view
+- [x] `/api/jobs` includes `user_status='deleted'` rows (1766 of 2386) that are never rendered. Filter server-side, separate endpoint or query param for trash view
 - [ ] No index on `jobs.user_status`
 - [ ] Static files (html/css/js) are not gzipped — httplib only compresses `set_content` responses, not `set_mount_point` files. Minor; revisit if vendor bundles grow
 - [ ] Pi WiFi drops after hours — check `iw dev wlan0 get power_save`, disable persistently. Also rule out 2.4 GHz band-steering; ethernet fixes it for good

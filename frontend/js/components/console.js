@@ -86,7 +86,6 @@ const COMMANDS = {
       const res = await fetch(`${API_BASE}/jobs`);
       const jobs = await res.json();
 
-      const deleted = jobs.filter(j => j.user_status === 'deleted').length;
       const active = jobs.filter(j => j.user_status !== 'deleted');
       const byStatus = {};
       const byLabel = {};
@@ -102,7 +101,7 @@ const COMMANDS = {
         if (job.fit_score !== undefined || job.fit_label) withFit++;
       });
 
-      let output = `Total active: ${active.length}  (${deleted} soft-deleted)`;
+      let output = `Total active: ${active.length}`;
       output += `\nWith fit assessment: ${withFit}`;
 
       output += '\n\nBy status:';

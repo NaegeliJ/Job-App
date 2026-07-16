@@ -244,6 +244,7 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
                fit_summary, fit_reasoning, fit_checked_at, fit_profile_hash,
                template_text, source, application_status, applied_at, last_reaction, last_reaction_at
         FROM jobs
+        WHERE user_status IS NULL OR user_status != 'deleted'
     )";
     exec_query(db, sql, [&](sqlite3_stmt* stmt) {
         JobRecord job;
