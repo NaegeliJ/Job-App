@@ -38,5 +38,6 @@ data/*.csv
 # Dev-only docs
 AGENTS.md
 TODO.md
+legal_notes.md
 /build-win/
 /deps/
