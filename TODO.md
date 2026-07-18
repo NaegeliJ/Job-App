@@ -8,6 +8,8 @@
 - [x] Periodic auto-scrape + fit-check (Available for testing now)
 - [x] Onboarding should test API call before user fills out fields
 - [x] Investigate bug .exe not working when downloading directly
+- [ ] Refactor sourcing to make it modular
+- [ ] De-dupe for sources
 - [ ] Restore single job? Generally admin console features and if it shall remain at all
 - [ ] Onboarding questions not optimal, also tedious to fill out. Maybe voice input or pick questions / answers
 - [ ] Onboarding and general logic is currently heavy tech and swiss focussed
