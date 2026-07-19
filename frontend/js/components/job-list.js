@@ -145,4 +145,21 @@ export function selectJob(jobId) {
 
   renderList();
   renderDetail();
+  loadJobDetail(state.currentJob);
+}
+
+// /api/jobs omits the heavy columns; fetch them once per job and re-render.
+// undefined template_text marks a job whose detail has not been loaded yet.
+async function loadJobDetail(job) {
+  if (job.template_text !== undefined) return;
+
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(job.job_id)}/detail`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const detail = await response.json();
+    Object.assign(job, detail);
+    if (state.currentJob === job) renderDetail();
+  } catch (error) {
+    console.error('Failed to load job detail:', error);
+  }
 }
