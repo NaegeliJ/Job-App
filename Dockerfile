@@ -1,12 +1,12 @@
 FROM debian:trixie-slim AS builder
-RUN apt-get update && apt-get install -y cmake make g++ libcurl4-openssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y cmake make g++ libcurl4-openssl-dev zlib1g-dev && rm -rf /var/lib/apt/lists/*
 ARG VERSION=unknown
 WORKDIR /src
 COPY . .
 RUN cmake -B build -DAPP_VERSION=${VERSION} && cmake --build build --parallel
 
 FROM debian:trixie-slim
-RUN apt-get update && apt-get install -y libcurl4t64 curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libcurl4t64 curl zlib1g && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /src/build/Job_App .
 COPY frontend/ frontend/

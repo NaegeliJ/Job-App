@@ -480,20 +480,20 @@
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .fit-badge-col {
     flex-direction: row;
     gap: 12px;
     align-items: center;
   }
-  
+
   .recheck-btn { margin-top: 0; }
-  
+
   .two-col {
     flex-direction: column;
     gap: 24px;
   }
-  
+
   .col-left, .col-right { flex: 1; }
 }
 

@@ -46,12 +46,11 @@ static json jobRecordToJson(const JobRecord& job) {
     jobJson["detail_url"]          = job.detail_url;
     jobJson["pub_date"]            = job.pub_date;
     jobJson["end_date"]            = job.end_date;
-    jobJson["template_text"]       = job.template_text;
 
+    // fit_summary, fit_reasoning, template_text intentionally omitted:
+    // heavy columns, served by GET /api/jobs/:id/detail
     jobJson["fit_score"]           = job.fit_score;
     jobJson["fit_label"]           = job.fit_label;
-    jobJson["fit_summary"]         = job.fit_summary;
-    jobJson["fit_reasoning"]       = job.fit_reasoning;
     jobJson["fit_checked_at"]      = job.fit_checked_at;
     jobJson["fit_profile_hash"]    = job.fit_profile_hash;
     jobJson["source"]              = job.source.empty() ? "jobs_ch" : job.source;
@@ -95,6 +94,24 @@ void registerRoutes(httplib::Server& server, AppState& state, Scheduler& schedul
         for (const auto& job : jobs)
             result.push_back(jobRecordToJson(job));
         sendJson(res, result);
+    });
+
+    server.Get("/api/jobs/:id/detail", [&state](const httplib::Request& req, httplib::Response& res) {
+        std::string job_id = req.path_params.at("id");
+        std::optional<JobDetail> detail;
+        {
+            std::lock_guard<std::mutex> lock(state.db_mutex);
+            detail = get_job_detail(state.db, job_id);
+        }
+        if (!detail) {
+            sendError(res, 404, "Job not found: " + job_id);
+            return;
+        }
+        sendJson(res, {
+            {"fit_summary",   detail->fit_summary},
+            {"fit_reasoning", detail->fit_reasoning},
+            {"template_text", detail->template_text}
+        });
     });
 
     server.Post("/api/jobs/update", [&state](const httplib::Request& req, httplib::Response& res) {

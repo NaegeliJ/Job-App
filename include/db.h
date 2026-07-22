@@ -62,8 +62,16 @@ int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label);
 int bulk_hard_delete_by_fit_label(sqlite3* db, const std::string& fit_label);
 int restore_all_deleted(sqlite3* db);
 
+// Heavy text columns excluded from get_all_jobs; fetched per job on demand
+struct JobDetail {
+    std::string fit_summary;
+    std::string fit_reasoning;
+    std::string template_text;
+};
+
 // Job queries
 std::vector<JobRecord> get_all_jobs(sqlite3* db);
+std::optional<JobDetail> get_job_detail(sqlite3* db, const std::string& job_id);
 std::vector<Job> get_jobs_needing_details(sqlite3* db);
 std::vector<JobRecord> get_jobs_needing_fitcheck_v2(sqlite3* db, int limit);
 std::optional<std::string> get_job_template_text(sqlite3* db, const std::string& job_id);
