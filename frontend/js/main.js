@@ -6,6 +6,20 @@ import { closeSettings, openSettings, saveSettings } from './components/modal.js
 import { setStatus, setRating, hoverStar, unhoverStar, setExpired, saveNotes, scrapeJobs, triggerFitCheck, openProfile, closeProfile, saveProfile, openOnboarding, importJobFromText, saveImportUrl, openImportModal, closeImportModal } from './components/actions.js';
 import { initConsole, toggleConsole } from './components/console.js';
 
+const MOBILE_BREAKPOINT = 1024;
+
+function isMobileView() {
+  return window.innerWidth <= MOBILE_BREAKPOINT;
+}
+
+// Collapse the mobile ☰ tools panel and reset its toggle state.
+function closeMobileTools() {
+  const toggle = document.getElementById('mobile-tools-toggle');
+  const headerActions = document.getElementById('header-actions');
+  if (headerActions) headerActions.classList.remove('open');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
 async function init() {
   const profileRes = await fetch(PROFILE_GET_URL);
   if (profileRes.status === 404) {
@@ -93,18 +107,16 @@ function bindEvents() {
       mobileToolsToggle.setAttribute('aria-expanded', String(isOpen));
     });
     headerActions.addEventListener('click', e => {
-      if (window.innerWidth > 1024) return;
+      if (!isMobileView()) return;
+      // Two-click cleanup arms on the first tap, so the tools panel has to stay
+      // open long enough for the confirm tap to land.
       if (e.target.closest('.bulk-delete-wrap')) return;
-      if (e.target.closest('button, a')) {
-        headerActions.classList.remove('open');
-        mobileToolsToggle.setAttribute('aria-expanded', 'false');
-      }
+      if (e.target.closest('button, a')) closeMobileTools();
     });
     document.addEventListener('click', e => {
-      if (window.innerWidth > 1024) return;
+      if (!isMobileView()) return;
       if (headerActions.contains(e.target) || mobileToolsToggle.contains(e.target)) return;
-      headerActions.classList.remove('open');
-      mobileToolsToggle.setAttribute('aria-expanded', 'false');
+      closeMobileTools();
     });
   }
 
@@ -118,7 +130,7 @@ function bindEvents() {
       const id = item.dataset.id;
       if (id) {
         selectJob(id);
-        if (window.innerWidth <= 1024) {
+        if (isMobileView()) {
           document.querySelector('.main')?.classList.add('detail-open');
         }
       }
@@ -201,6 +213,7 @@ document.addEventListener('keydown', e => {
     closeProfile();
     closeImportModal();
     document.querySelector('.main')?.classList.remove('detail-open');
+    closeMobileTools();
     const menu = document.getElementById('filter-dropdown-menu');
     const btn = document.getElementById('filter-dropdown-btn');
     if (menu) menu.classList.remove('open');

@@ -150,5 +150,7 @@
     font-size: 12px;
     min-height: 44px;
     pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }

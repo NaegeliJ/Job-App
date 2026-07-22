@@ -107,7 +107,7 @@ void insert_or_update_job(sqlite3 *db, const Job &job) {
 }
 
 int bulk_soft_delete_by_fit_label(sqlite3* db, const std::string& fit_label) {
-    exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE LOWER(fit_label) = LOWER(?)", {fit_label});
+    exec_write(db, "UPDATE jobs SET user_status = 'deleted' WHERE LOWER(fit_label) = LOWER(?) AND user_status != 'deleted'", {fit_label});
     return sqlite3_changes(db);
 }
 
@@ -241,9 +241,10 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
                employment_grade, application_url,
                user_status, rating, notes, availability_status, detail_url,
                initial_publication_date, publication_end_date, fit_score, fit_label,
-               fit_summary, fit_reasoning, fit_checked_at, fit_profile_hash,
-               template_text, source, application_status, applied_at, last_reaction, last_reaction_at
+               fit_checked_at, fit_profile_hash,
+               source, application_status, applied_at, last_reaction, last_reaction_at
         FROM jobs
+        WHERE user_status IS NULL OR user_status != 'deleted'
     )";
     exec_query(db, sql, [&](sqlite3_stmt* stmt) {
         JobRecord job;
@@ -264,19 +265,26 @@ std::vector<JobRecord> get_all_jobs(sqlite3* db) {
         job.end_date            = getColumn(stmt, 14);
         job.fit_score           = sqlite3_column_int(stmt, 15);
         job.fit_label           = getColumn(stmt, 16);
-        job.fit_summary         = getColumn(stmt, 17);
-        job.fit_reasoning       = getColumn(stmt, 18);
-        job.fit_checked_at      = getColumn(stmt, 19);
-        job.fit_profile_hash    = getColumn(stmt, 20);
-        job.template_text       = getColumn(stmt, 21);
-        job.source              = getColumn(stmt, 22);
-        job.application_status  = getColumn(stmt, 23);
-        job.applied_at          = getColumn(stmt, 24);
-        job.last_reaction       = getColumn(stmt, 25);
-        job.last_reaction_at    = getColumn(stmt, 26);
+        job.fit_checked_at      = getColumn(stmt, 17);
+        job.fit_profile_hash    = getColumn(stmt, 18);
+        job.source              = getColumn(stmt, 19);
+        job.application_status  = getColumn(stmt, 20);
+        job.applied_at          = getColumn(stmt, 21);
+        job.last_reaction       = getColumn(stmt, 22);
+        job.last_reaction_at    = getColumn(stmt, 23);
         jobs.push_back(job);
     });
     return jobs;
+}
+
+std::optional<JobDetail> get_job_detail(sqlite3* db, const std::string& job_id) {
+    std::optional<JobDetail> detail;
+    exec_query(db, "SELECT fit_summary, fit_reasoning, template_text FROM jobs WHERE job_id = ?",
+        [&](sqlite3_stmt* stmt) {
+            detail = JobDetail{getColumn(stmt, 0), getColumn(stmt, 1), getColumn(stmt, 2)};
+        },
+        {job_id});
+    return detail;
 }
 
 void db_v2_init(sqlite3* db) {

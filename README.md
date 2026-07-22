@@ -107,7 +107,13 @@ docker compose logs -f
 
 ## Disclaimer
 
-This tool scrapes jobs.ch. Use it responsibly and at your own risk. The authors are not responsible for any consequences arising from its use.
+**Experimental software — active development, not production-ready.** Provided as-is, with no warranty of any kind (see the AGPL for the full warranty disclaimer). Expect bugs, breaking changes, and incomplete features.
+
+This project is a personal development experiment, published for transparency and source availability — **not** an invitation to run it against third-party services at scale.
+
+The scraping components access **jobs.ch** and **LinkedIn**. These accesses may conflict with those services' Terms of Service and `robots.txt`. Whether, where, and how you may lawfully scrape depends on your jurisdiction and their terms — it is **your** responsibility to check before running any scrape.
+
+You run this software **entirely at your own risk**. You alone are responsible for how you use it and for any consequences. The authors and contributors host nothing on your behalf, provide no service, and accept no liability for any use, misuse, damage, or legal claim arising from it. If you run it, you are the operator and the sole responsible party.
 
 ## Uninstall
 
@@ -124,3 +130,11 @@ rm -rf ~/Job-App
 ```
 
 **Windows exe:** delete the unzipped folder. Nothing is installed system-wide.
+
+## License
+
+Copyright (C) 2026 Sandy Meister.
+
+Licensed under the **GNU Affero General Public License v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](LICENSE).
+
+Because this is a network application, the AGPL requires that users interacting with a running instance can obtain its source. The in-app footer links here: <https://github.com/Meisdy/Job-App>.
